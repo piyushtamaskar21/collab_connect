@@ -1,0 +1,561 @@
+[
+  {
+    "id": "cc0b8d0e-09eb-4cd6-ac1c-d1453d5a299c",
+    "name": "Dennis Burns",
+    "email": "laraelizabeth@example.com",
+    "profile": {
+      "role": "Data Scientist",
+      "seniority": "Mid-Level",
+      "department": "Data",
+      "skills": [
+        "Pandas",
+        "Jupyter",
+        "TensorFlow",
+        "Statistics",
+        "Python"
+      ],
+      "tools": [
+        "GitLab",
+        "GitHub"
+      ],
+      "projects": [
+        "AI Recommendation Engine",
+        "Cloud Migration"
+      ],
+      "interests": [
+        "Public Speaking",
+        "Hackathons"
+      ]
+    }
+  },
+  {
+    "id": "c1ee32ee-99bf-4064-9059-1ecd2b6bc9cb",
+    "name": "Brooke Bartlett",
+    "email": "kimberlymiller@example.org",
+    "profile": {
+      "role": "Frontend Engineer",
+      "seniority": "Junior",
+      "department": "Engineering",
+      "skills": [
+        "Next.js",
+        "HTML",
+        "Redux",
+        "Tailwind",
+        "TypeScript"
+      ],
+      "tools": [
+        "GitHub",
+        "Slack"
+      ],
+      "projects": [
+        "Mobile App Revamp"
+      ],
+      "interests": [
+        "Mentoring",
+        "AI"
+      ]
+    }
+  },
+  {
+    "id": "f75c0843-53b9-402c-8b77-43f12b7b0ec8",
+    "name": "Michelle Hernandez MD",
+    "email": "randallgraham@example.org",
+    "profile": {
+      "role": "Backend Engineer",
+      "seniority": "Principal",
+      "department": "Engineering",
+      "skills": [
+        "Go",
+        "Microservices",
+        "Java",
+        "Kubernetes",
+        "Python",
+        "SQL"
+      ],
+      "tools": [
+        "Slack",
+        "Confluence"
+      ],
+      "projects": [
+        "Internal Dashboard"
+      ],
+      "interests": [
+        "Mentoring",
+        "AI"
+      ]
+    }
+  },
+  {
+    "id": "a1180ae1-b12d-4690-8c5e-cfe1671fc1d1",
+    "name": "Cynthia Chambers",
+    "email": "linda61@example.com",
+    "profile": {
+      "role": "Backend Engineer",
+      "seniority": "Mid-Level",
+      "department": "Engineering",
+      "skills": [
+        "SQL",
+        "Python",
+        "Java"
+      ],
+      "tools": [
+        "Slack",
+        "GitHub"
+      ],
+      "projects": [
+        "User Onboarding Flow",
+        "Internal Dashboard"
+      ],
+      "interests": [
+        "Hackathons",
+        "Open Source"
+      ]
+    }
+  },
+  {
+    "id": "34eb5083-b5ab-459f-9a32-afccc5d1186f",
+    "name": "Tracy Chase",
+    "email": "christopher53@example.net",
+    "profile": {
+      "role": "UX Designer",
+      "seniority": "Staff",
+      "department": "Design",
+      "skills": [
+        "Wireframing",
+        "User Research",
+        "Figma",
+        "Prototyping",
+        "Sketch"
+      ],
+      "tools": [
+        "Confluence",
+        "GitLab"
+      ],
+      "projects": [
+        "AI Recommendation Engine",
+        "Internal Dashboard",
+        "Security Audit"
+      ],
+      "interests": [
+        "Mentoring",
+        "Hackathons"
+      ]
+    }
+  },
+  {
+    "id": "e06d9d8c-f0d4-4fbc-9250-baae09297625",
+    "name": "Joshua Thornton",
+    "email": "joneschristopher@example.org",
+    "profile": {
+      "role": "Frontend Engineer",
+      "seniority": "Mid-Level",
+      "department": "Engineering",
+      "skills": [
+        "Next.js",
+        "Tailwind",
+        "React",
+        "HTML"
+      ],
+      "tools": [
+        "GitLab",
+        "GitHub"
+      ],
+      "projects": [
+        "Mobile App Revamp",
+        "Internal Dashboard",
+        "Payment Gateway Integration"
+      ],
+      "interests": [
+        "Public Speaking",
+        "Open Source"
+      ]
+    }
+  },
+  {
+    "id": "c55f866b-65cf-4191-8bf9-353b71a3bcc9",
+    "name": "Jesse Miller",
+    "email": "michael19@example.org",
+    "profile": {
+      "role": "Frontend Engineer",
+      "seniority": "Senior",
+      "department": "Engineering",
+      "skills": [
+        "React",
+        "CSS",
+        "Redux",
+        "Next.js"
+      ],
+      "tools": [
+        "Confluence",
+        "GitHub"
+      ],
+      "projects": [
+        "Mobile App Revamp",
+        "Data Warehouse Redesign"
+      ],
+      "interests": [
+        "Mentoring",
+        "AI"
+      ]
+    }
+  },
+  {
+    "id": "eb6f8c49-da48-48ff-b4aa-95b85ac58f9a",
+    "name": "Richard Weber",
+    "email": "jessica51@example.org",
+    "profile": {
+      "role": "Frontend Engineer",
+      "seniority": "Senior",
+      "department": "Engineering",
+      "skills": [
+        "TypeScript",
+        "Redux",
+        "CSS",
+        "HTML",
+        "Next.js"
+      ],
+      "tools": [
+        "JIRA",
+        "Confluence"
+      ],
+      "projects": [
+        "Mobile App Revamp"
+      ],
+      "interests": [
+        "AI",
+        "Open Source"
+      ]
+    }
+  },
+  {
+    "id": "ac42377e-3ddd-4d53-87a2-7e37de752ebc",
+    "name": "Juan Taylor",
+    "email": "bennetterin@example.com",
+    "profile": {
+      "role": "UX Designer",
+      "seniority": "Mid-Level",
+      "department": "Design",
+      "skills": [
+        "User Research",
+        "Adobe XD",
+        "Wireframing"
+      ],
+      "tools": [
+        "GitHub",
+        "Slack"
+      ],
+      "projects": [
+        "AI Recommendation Engine"
+      ],
+      "interests": [
+        "Hackathons",
+        "Open Source"
+      ]
+    }
+  },
+  {
+    "id": "5a3db0b3-88b9-47e4-915e-e3bb2ebb7296",
+    "name": "Michael Wheeler",
+    "email": "meyermegan@example.com",
+    "profile": {
+      "role": "Frontend Engineer",
+      "seniority": "Principal",
+      "department": "Engineering",
+      "skills": [
+        "Redux",
+        "HTML",
+        "CSS",
+        "Next.js"
+      ],
+      "tools": [
+        "GitLab",
+        "Slack"
+      ],
+      "projects": [
+        "Cloud Migration",
+        "Payment Gateway Integration",
+        "Security Audit"
+      ],
+      "interests": [
+        "Hackathons",
+        "Open Source"
+      ]
+    }
+  },
+  {
+    "id": "88393994-8c3e-42f0-b2cc-2c02b9a26ca9",
+    "name": "John Kirby",
+    "email": "stephaniefranklin@example.net",
+    "profile": {
+      "role": "QA Engineer",
+      "seniority": "Principal",
+      "department": "Engineering",
+      "skills": [
+        "Test Automation",
+        "Java",
+        "Jenkins",
+        "Cypress"
+      ],
+      "tools": [
+        "GitHub",
+        "GitLab"
+      ],
+      "projects": [
+        "Security Audit"
+      ],
+      "interests": [
+        "Hackathons",
+        "Public Speaking"
+      ]
+    }
+  },
+  {
+    "id": "f4e65295-ab80-4ecc-bd3c-bb933fb965b8",
+    "name": "Kimberly Shaffer",
+    "email": "myersmathew@example.net",
+    "profile": {
+      "role": "UX Designer",
+      "seniority": "Principal",
+      "department": "Design",
+      "skills": [
+        "Prototyping",
+        "Wireframing",
+        "Sketch",
+        "Adobe XD",
+        "User Research",
+        "Figma"
+      ],
+      "tools": [
+        "GitHub",
+        "Confluence"
+      ],
+      "projects": [
+        "Internal Dashboard"
+      ],
+      "interests": [
+        "Public Speaking",
+        "Open Source"
+      ]
+    }
+  },
+  {
+    "id": "ff80b53a-72cf-4543-839c-ec25f1c5c1ca",
+    "name": "Tammy Ortiz",
+    "email": "jwilkins@example.net",
+    "profile": {
+      "role": "UX Designer",
+      "seniority": "Mid-Level",
+      "department": "Design",
+      "skills": [
+        "User Research",
+        "Figma",
+        "Prototyping",
+        "Adobe XD"
+      ],
+      "tools": [
+        "Slack",
+        "GitLab"
+      ],
+      "projects": [
+        "Mobile App Revamp"
+      ],
+      "interests": [
+        "Open Source",
+        "AI"
+      ]
+    }
+  },
+  {
+    "id": "c004e244-71e7-4b73-bbe2-71a9dc1190c2",
+    "name": "Heather Pope",
+    "email": "annaware@example.org",
+    "profile": {
+      "role": "Product Manager",
+      "seniority": "Junior",
+      "department": "Product",
+      "skills": [
+        "Roadmapping",
+        "JIRA",
+        "Communication"
+      ],
+      "tools": [
+        "GitHub",
+        "Confluence"
+      ],
+      "projects": [
+        "Payment Gateway Integration",
+        "Data Warehouse Redesign"
+      ],
+      "interests": [
+        "Public Speaking",
+        "AI"
+      ]
+    }
+  },
+  {
+    "id": "fab6edbe-e4a9-4431-92e0-1f75de5f1e5d",
+    "name": "Rachel Thompson",
+    "email": "joseph54@example.com",
+    "profile": {
+      "role": "Frontend Engineer",
+      "seniority": "Principal",
+      "department": "Engineering",
+      "skills": [
+        "CSS",
+        "TypeScript",
+        "React"
+      ],
+      "tools": [
+        "GitLab",
+        "Slack"
+      ],
+      "projects": [
+        "User Onboarding Flow",
+        "Payment Gateway Integration",
+        "Mobile App Revamp"
+      ],
+      "interests": [
+        "Open Source",
+        "Public Speaking"
+      ]
+    }
+  },
+  {
+    "id": "b9d7dba6-345c-4afc-8874-966787e9aaf0",
+    "name": "Patricia Dougherty",
+    "email": "stoneandrea@example.com",
+    "profile": {
+      "role": "Backend Engineer",
+      "seniority": "Junior",
+      "department": "Engineering",
+      "skills": [
+        "Python",
+        "AWS",
+        "Microservices",
+        "Go"
+      ],
+      "tools": [
+        "Confluence",
+        "GitLab"
+      ],
+      "projects": [
+        "Cloud Migration",
+        "User Onboarding Flow"
+      ],
+      "interests": [
+        "Public Speaking",
+        "AI"
+      ]
+    }
+  },
+  {
+    "id": "ec46bf6b-d3f1-413f-8446-bd25f1fd45ac",
+    "name": "Jamie Miller",
+    "email": "johncain@example.net",
+    "profile": {
+      "role": "Engineering Manager",
+      "seniority": "Principal",
+      "department": "Engineering",
+      "skills": [
+        "Agile",
+        "Leadership",
+        "Strategy",
+        "Communication",
+        "Mentoring"
+      ],
+      "tools": [
+        "Slack",
+        "GitLab"
+      ],
+      "projects": [
+        "AI Recommendation Engine"
+      ],
+      "interests": [
+        "Hackathons",
+        "Open Source"
+      ]
+    }
+  },
+  {
+    "id": "73ace15b-fb74-4f13-8f48-649f57bd6365",
+    "name": "Douglas Kerr",
+    "email": "scottmarc@example.org",
+    "profile": {
+      "role": "DevOps Engineer",
+      "seniority": "Principal",
+      "department": "Infrastructure",
+      "skills": [
+        "Docker",
+        "Linux",
+        "AWS"
+      ],
+      "tools": [
+        "GitLab",
+        "Slack"
+      ],
+      "projects": [
+        "AI Recommendation Engine"
+      ],
+      "interests": [
+        "AI",
+        "Hackathons"
+      ]
+    }
+  },
+  {
+    "id": "7d6f3d86-b551-48f5-9612-bc4005ebc6cd",
+    "name": "Brian Barrett",
+    "email": "sgreen@example.com",
+    "profile": {
+      "role": "UX Designer",
+      "seniority": "Staff",
+      "department": "Design",
+      "skills": [
+        "Figma",
+        "Wireframing",
+        "Adobe XD",
+        "Prototyping"
+      ],
+      "tools": [
+        "GitLab",
+        "Slack"
+      ],
+      "projects": [
+        "Data Warehouse Redesign",
+        "Payment Gateway Integration"
+      ],
+      "interests": [
+        "Public Speaking",
+        "AI"
+      ]
+    }
+  },
+  {
+    "id": "e57e9cbd-cd5d-481f-ac40-b2350ce326ab",
+    "name": "Michael Jimenez",
+    "email": "mitchellrobert@example.net",
+    "profile": {
+      "role": "Frontend Engineer",
+      "seniority": "Principal",
+      "department": "Engineering",
+      "skills": [
+        "CSS",
+        "HTML",
+        "Redux"
+      ],
+      "tools": [
+        "Slack",
+        "GitLab"
+      ],
+      "projects": [
+        "Payment Gateway Integration",
+        "Security Audit",
+        "Data Warehouse Redesign"
+      ],
+      "interests": [
+        "Hackathons",
+        "Public Speaking"
+      ]
+    }
+  }
+]

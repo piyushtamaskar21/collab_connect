@@ -1,0 +1,7 @@
+faker
+numpy
+openai
+python-dotenv
+fastapi
+uvicorn
+python-multipart
