@@ -8,7 +8,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 interface ResumeUploaderProps {
-    onTextExtracted: (text: string) => void;
+    onTextExtracted: (data: { text: string; mode: 'resume' | 'search' | 'name_search' }) => void;
 }
 
 export const ResumeUploader: React.FC<ResumeUploaderProps> = ({ onTextExtracted }) => {
@@ -107,7 +107,37 @@ export const ResumeUploader: React.FC<ResumeUploaderProps> = ({ onTextExtracted 
                 combinedText += `[Attached File Content (${selectedFile.name})]:\n${fileText}`;
             }
 
-            onTextExtracted(combinedText);
+            // Detect search intent
+            const searchKeywords = ["find", "search", "show", "who knows", "who has", "people skilled in", "looking for", "expert in"];
+            const lowerText = combinedText.toLowerCase();
+
+            let mode: 'resume' | 'search' | 'name_search' = 'resume';
+
+            if (!selectedFile) {
+                const isKeywordSearch = searchKeywords.some(keyword => lowerText.includes(keyword));
+
+                if (isKeywordSearch) {
+                    mode = 'search';
+                } else {
+                    // Name search heuristics:
+                    // 1. Short length (e.g. < 50 chars)
+                    // 2. No special characters typically found in code or complex queries (except space, apostrophe, hyphen)
+                    // 3. 1-3 words
+                    const words = combinedText.trim().split(/\s+/);
+                    const isShort = combinedText.length < 50;
+                    const isFewWords = words.length >= 1 && words.length <= 3;
+                    const isNameLike = /^[a-zA-Z\s'-]+$/.test(combinedText);
+
+                    if (isShort && isFewWords && isNameLike) {
+                        mode = 'name_search';
+                    }
+                }
+            }
+
+            onTextExtracted({
+                text: combinedText,
+                mode: mode
+            });
             // Clear inputs after successful submission
             setInputText('');
             setSelectedFile(null);

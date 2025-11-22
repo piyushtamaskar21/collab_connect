@@ -12,7 +12,8 @@ CollabConnect is an intelligent platform that helps employees discover the best 
 - [Project Purpose](#project-purpose)
 - [Architecture](#architecture)
 - [Features](#features)
-- [How It Works](#how-it-works)
+- [How It Works (For Everyone)](#how-it-works-for-everyone)
+- [How It Works (Technical)](#how-it-works-technical)
 - [API Documentation](#api-documentation)
 - [Setup Instructions](#setup-instructions)
 - [Technology Stack](#technology-stack)
@@ -51,8 +52,8 @@ CollabConnect solves this by:
 ┌─────────────────────────────────────────────────────────────┐
 │                        Frontend (React)                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Resume       │  │ Employee     │  │ Profile Modal    │  │
-│  │ Uploader     │  │ Cards        │  │ (Detailed View)  │  │
+│  │ Unified      │  │ Employee     │  │ Profile Modal    │  │
+│  │ Input Box    │  │ Cards        │  │ (Detailed View)  │  │
 │  └──────────────┘  └──────────────┘  └──────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
                             ↓ HTTP/JSON
@@ -65,7 +66,7 @@ CollabConnect solves this by:
 └─────────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                   LLM Agent (OpenAI GPT-4)                   │
+│               LLM Agent (Google Gemini 1.5 Pro)              │
 │  • Generate embeddings for semantic search                   │
 │  • Create match explanations                                 │
 │  • Suggest collaboration opportunities                       │
@@ -74,13 +75,14 @@ CollabConnect solves this by:
 
 ### Data Flow
 
-1. **User uploads resume** → PDF parsed in browser (pdfjs-dist)
-2. **Text sent to backend** → `/api/recommend` endpoint
-3. **Embedding generation** → OpenAI creates vector representation
-4. **Similarity search** → Cosine similarity against employee database
-5. **LLM analysis** → GPT-4 generates match reasons & collaboration ideas
-6. **Response returned** → Detailed employee profiles with insights
-7. **Frontend displays** → Cards with "Read More" for full details
+1. **User Input** → Resume upload OR search query
+2. **Intent Detection** → Frontend determines mode (Resume, Keyword Search, Name Search)
+3. **Backend Processing** → `/api/recommend` endpoint
+4. **Embedding/Search** → Gemini creates vector representation or performs fuzzy search
+5. **Similarity/Matching** → Cosine similarity or fuzzy string matching
+6. **LLM Analysis** → Gemini 1.5 Pro generates match reasons & collaboration ideas
+7. **Response Returned** → Detailed employee profiles with insights
+8. **Frontend Displays** → Cards with "Read More" for full details
 
 ---
 
@@ -88,11 +90,10 @@ CollabConnect solves this by:
 
 ### Completed Features
 
-#### 1. **Resume Upload & PDF Parsing**
-- Drag-and-drop file upload interface
-- Client-side PDF text extraction using `pdfjs-dist`
-- Support for multi-page PDF documents
-- Real-time processing feedback
+#### 1. **Unified Smart Input**
+- **Resume Analysis**: Upload a PDF/DOCX or paste resume text to find colleagues with complementary skills.
+- **Keyword Search**: Type queries like "Find Python experts" or "Who knows React?" to find specific skills.
+- **Name Search**: Search for colleagues by name (e.g., "Joshua Hart") with fuzzy matching support (finds "Josh Hart").
 
 #### 2. **Employee Recommendation Cards**
 - **Match Score**: Percentage-based compatibility rating
@@ -119,13 +120,6 @@ Opens when clicking "Read More" on any card:
 - Seniority alignment
 - AI-generated collaboration suggestions
 
-**UX Features:**
-- Smooth fade-in/slide-up animations
-- ESC key to close
-- Click outside to close
-- Scrollable content
-- Responsive design (2-column desktop, 1-column mobile)
-
 #### 4. **AI-Powered Insights**
 - **Match Reason Summaries**: Specific explanations for each recommendation
 - **Collaboration Suggestions**: 2-3 actionable ideas per match
@@ -133,7 +127,31 @@ Opens when clicking "Read More" on any card:
 
 ---
 
-## 🔧 How It Works
+## 🧠 How It Works (For Everyone)
+
+Curious about what happens when you click "Analyze"? Here is the non-technical breakdown:
+
+### 1. The "Reading" Phase (Ingestion)
+Imagine a super-fast reader who can read a resume in milliseconds. When you upload a file or type a search query, CollabConnect "reads" it to understand **who you are** (if it's a resume) or **what you are looking for** (if it's a search). It identifies key information like skills, job titles, and project experience.
+
+### 2. The "Understanding" Phase (AI Analysis)
+This is where the magic happens. We use **Google Gemini**, a powerful Artificial Intelligence, to understand the *meaning* behind the words.
+- It knows that "React" and "Frontend" are related.
+- It understands that a "Data Scientist" and a "Machine Learning Engineer" might work well together.
+- It converts your profile into a mathematical "fingerprint" (called an embedding) that represents your professional identity.
+
+### 3. The "Matching" Phase (Connection)
+CollabConnect then compares your "fingerprint" against every other employee in the database. It looks for:
+- **Similarities**: People who do what you do (good for mentorship or sharing knowledge).
+- **Complementary Skills**: People who have skills you need (e.g., a Backend Engineer matching with a Frontend Engineer).
+- **Name Matches**: If you searched for a name, it looks for close matches, even if you made a typo (like "Josh" instead of "Joshua").
+
+### 4. The "Explanation" Phase (Insights)
+Finally, the system doesn't just give you a list of names. It acts like a helpful colleague introducing you. It writes a personalized summary explaining **why** it picked these people and **how** you could collaborate (e.g., "You both know Python, but she specializes in AI—you could learn a lot from her!").
+
+---
+
+## 🔧 How It Works (Technical)
 
 ### Resume Upload + PDF Parsing
 
@@ -145,36 +163,18 @@ Opens when clicking "Read More" on any card:
 4. Combined text sent to backend API
 ```
 
-**Key Implementation:**
-```typescript
-const extractText = async (file: File) => {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let fullText = '';
-    
-    for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(' ');
-        fullText += pageText + ' ';
-    }
-    
-    onTextExtracted(fullText);
-};
-```
-
 ### Employee Recommendation Engine
 
 ```python
 # Backend: engine.py
 1. Create temporary employee profile from resume text
-2. Generate embedding using OpenAI text-embedding-3-small
+2. Generate embedding using Gemini text-embedding-004
 3. Compute cosine similarity against all employees
 4. Rank by similarity score
 5. Return top 5 matches
 ```
 
-**Similarity Scoring:**
+### Similarity Scoring
 ```python
 # Cosine Similarity Formula
 similarity = (A · B) / (||A|| × ||B||)
@@ -185,64 +185,29 @@ similarity = (A · B) / (||A|| × ||B||)
 # Result: 0.0 (no match) to 1.0 (perfect match)
 ```
 
-### Resume Comparison Logic
-
-```python
-# engine.py: generate_detailed_match()
-1. Extract skills from both profiles
-2. Find intersection (shared skills)
-3. Compare project domains
-4. Identify tech stack overlap
-5. Check seniority alignment
-6. Generate LLM-powered summary
-```
-
-**Example Match Analysis:**
-```json
-{
-  "sharedSkills": ["Python", "Docker", "Kubernetes"],
-  "matchingProjects": ["Backend Engineering", "Infrastructure"],
-  "techOverlap": ["Python", "AWS", "PostgreSQL"],
-  "matchingSeniority": true,
-  "reasonSummary": "Strong backend alignment with shared expertise in containerization and cloud infrastructure."
-}
-```
-
 ### LLM Agent Integration
 
-**Two Main LLM Calls:**
+**Two Main LLM Calls (Google Gemini 1.5 Pro):**
 
 1. **Match Reason Generation** (`_generate_llm_match_content`):
 ```python
-# Input to GPT-4
+# Input to Gemini
 {
-  "target_employee": {
-    "name": "...",
-    "role": "...",
-    "skills": [...],
-    "projects": [...]
-  },
+  "target_employee": {...},
   "matched_employee": {...},
-  "overlap": {
-    "shared_skills": [...],
-    "tech_overlap": [...]
-  }
+  "overlap": {...}
 }
 
-# Output from GPT-4
+# Output from Gemini
 {
   "reasonSummary": "1-2 sentence explanation",
-  "collaborationSuggestions": [
-    "Specific suggestion 1",
-    "Specific suggestion 2",
-    "Specific suggestion 3"
-  ]
+  "collaborationSuggestions": ["Suggestion 1", "Suggestion 2"]
 }
 ```
 
 2. **Embedding Generation**:
-- Model: `text-embedding-3-small`
-- Dimension: 1536
+- Model: `text-embedding-004`
+- Dimension: 768
 - Input: Combined text from profile (role, skills, projects, summary)
 - Output: Vector representation for semantic search
 
@@ -252,12 +217,29 @@ similarity = (A · B) / (||A|| × ||B||)
 
 ### POST `/api/recommend`
 
-**Description:** Get employee recommendations based on resume text
+**Description:** Get employee recommendations based on resume text or search query.
 
-**Request:**
+**Request (Resume Mode):**
 ```json
 {
-  "resumeText": "string (extracted from PDF)"
+  "resumeText": "string (extracted from PDF)",
+  "mode": "resume"
+}
+```
+
+**Request (Search Mode):**
+```json
+{
+  "searchQuery": "Find Python experts",
+  "mode": "search"
+}
+```
+
+**Request (Name Search Mode):**
+```json
+{
+  "searchQuery": "Joshua Hart",
+  "mode": "name_search"
 }
 ```
 
@@ -269,38 +251,11 @@ similarity = (A · B) / (||A|| × ||B||)
       "id": "emp001",
       "name": "Rebecca Taylor",
       "title": "Backend Engineer",
-      "department": "Platform Engineering",
-      "location": "Berlin, Germany",
-      "email": "rebecca.taylor@company.com",
-      "manager": "Sarah Thompson",
-      "experienceYears": 6,
-      "professionalSummary": "Backend engineer with strong experience...",
-      "skills": ["Java", "Python", "Kubernetes", "SQL"],
-      "primarySkills": ["Java", "Kubernetes"],
-      "secondarySkills": ["Python", "SQL"],
-      "tools": ["IntelliJ", "Docker", "Grafana"],
-      "projects": [
-        {
-          "name": "Payment Gateway Modernization",
-          "description": "Migrated legacy payment system...",
-          "tech": ["Java", "Kubernetes", "Kafka"]
-        }
-      ],
       "matchScore": 0.78,
-      "summary": "Strong backend alignment and similar distributed system exposure.",
-      "avatarUrl": "https://ui-avatars.com/api/?name=Rebecca+Taylor&background=random",
-      "resumeMatch": {
-        "sharedSkills": ["Java", "Python"],
-        "matchingProjects": ["Backend Engineering"],
-        "matchingDomains": ["Engineering"],
-        "techOverlap": ["Java", "SQL"],
-        "matchingSeniority": true,
-        "reasonSummary": "Extensive backend skills align with your experience..."
-      },
-      "collaborationSuggestions": [
-        "Collaborate on distributed system scaling tasks.",
-        "Pair on backend migration work due to shared Java/K8s skills."
-      ]
+      "summary": "Strong backend alignment...",
+      "whyMatched": ["Matches skill: Python"],
+      "collaborationSuggestions": ["Collaborate on distributed systems..."]
+      // ... other fields
     }
   ]
 }
@@ -314,7 +269,7 @@ similarity = (A · B) / (||A|| × ||B||)
 
 - **Python 3.9+**
 - **Node.js 16+**
-- **OpenAI API Key**
+- **Google Gemini API Key**
 
 ### Installation
 
@@ -331,7 +286,7 @@ pip install -r requirements.txt
 
 # Create .env file
 cat > .env << EOF
-OPENAI_API_KEY=your_openai_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 EOF
 ```
 
@@ -361,37 +316,13 @@ Frontend runs on: `http://localhost:5173`
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `OPENAI_API_KEY` | OpenAI API key for embeddings & LLM | Yes |
+| `GEMINI_API_KEY` | Google Gemini API key for embeddings & LLM | Yes |
 
 ---
 
 ## 🧪 Synthetic Data for POC
 
-For this proof-of-concept, we generate **30 synthetic employees** with realistic profiles:
-
-**Generated Data Includes:**
-- Names (via Faker library)
-- Roles: Backend Engineer, Frontend Engineer, Data Engineer, etc.
-- Departments: Engineering, Product, Design, Data, Infrastructure
-- Locations: San Francisco, New York, Berlin, London, Remote
-- 6-12 skills per employee
-- 2-4 projects with descriptions and tech stacks
-- Professional summaries
-- Manager names
-- Experience years (2-15)
-
-**Data Generation:**
-```python
-# generator.py
-employees = generate_synthetic_data(count=30)
-# Creates rich, realistic employee profiles
-```
-
-**Why Synthetic Data?**
-- No privacy concerns
-- Consistent testing
-- Easy to regenerate
-- Demonstrates full functionality
+For this proof-of-concept, we generate **30 synthetic employees** with realistic profiles using the `Faker` library. This ensures privacy and provides consistent testing data.
 
 ---
 
@@ -408,14 +339,14 @@ employees = generate_synthetic_data(count=30)
 - **FastAPI** for REST API
 - **Python 3.9+**
 - **NumPy** for vector operations
-- **OpenAI SDK** for embeddings & LLM
+- **Google Generative AI SDK** for embeddings & LLM
 - **Faker** for synthetic data
 - **python-dotenv** for environment management
 
 ### AI/ML
-- **OpenAI GPT-4** for text generation
-- **text-embedding-3-small** for embeddings
-- **Cosine Similarity** for matching
+- **Google Gemini 1.5 Pro** for text generation
+- **text-embedding-004** for embeddings
+- **Cosine Similarity** & **Fuzzy Matching** for matching
 
 ---
 
@@ -461,7 +392,7 @@ collab_connect/
 │   │   │   ├── EmployeeCard.tsx          # Recommendation card
 │   │   │   ├── EmployeeProfileModal.tsx  # Detailed view modal
 │   │   │   ├── RecommendationsGrid.tsx   # Card grid layout
-│   │   │   ├── ResumeUploader.tsx        # PDF upload component
+│   │   │   ├── ResumeUploader.tsx        # Unified input component
 │   │   │   └── SkillChip.tsx             # Skill badge component
 │   │   ├── App.tsx          # Main application
 │   │   ├── main.tsx         # Entry point
@@ -496,7 +427,7 @@ This project is for demonstration purposes.
 
 ## 🙏 Acknowledgments
 
-- **OpenAI** for GPT-4 and embedding models
+- **Google** for Gemini 1.5 Pro and embedding models
 - **Mozilla** for pdf.js library
 - **FastAPI** team for the excellent framework
 - **React** and **Vite** communities

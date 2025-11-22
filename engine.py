@@ -2,15 +2,20 @@ import json
 import os
 from typing import List, Dict
 import numpy as np
-from openai import OpenAI
+import difflib
+import google.generativeai as genai
 from models import Employee
 
 class CollabEngine:
     def __init__(self, api_key: str = None):
         self.employees: List[Employee] = []
-        # Initialize OpenAI client
-        # If api_key is not passed, it will look for OPENAI_API_KEY env var
-        self.client = OpenAI(api_key=api_key) if api_key else OpenAI()
+        # Initialize Gemini client
+        if api_key:
+            genai.configure(api_key=api_key)
+        elif os.getenv("GEMINI_API_KEY"):
+            genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        
+        self.model = genai.GenerativeModel('gemini-3-pro-preview')
         self.embeddings_matrix = None
 
     def load_employees(self, employees: List[Employee]):
@@ -20,7 +25,7 @@ class CollabEngine:
     def _compute_embeddings(self):
         if not self.employees:
             return
-        print("Generating embeddings using OpenAI...")
+        print("Generating embeddings using Gemini...")
         texts = []
         for emp in self.employees:
             if not emp.raw_text:
@@ -39,14 +44,20 @@ class CollabEngine:
         
         # Batch generation might be needed for large sets, but for 20-50 it's fine
         # We'll do it in one go or small batches
+        # Batch generation might be needed for large sets, but for 20-50 it's fine
+        # We'll do it in one go or small batches
         try:
-            response = self.client.embeddings.create(
-                input=texts,
-                model="text-embedding-3-small"
-            )
+            # Gemini embedding model
+            # Using 'models/text-embedding-004'
             
             for idx, emp in enumerate(self.employees):
-                emp.embedding = response.data[idx].embedding
+                result = genai.embed_content(
+                    model="models/text-embedding-004",
+                    content=emp.raw_text,
+                    task_type="retrieval_document",
+                    title="Employee Profile"
+                )
+                emp.embedding = result['embedding']
             
             # Update embeddings_matrix for similarity calculations
             self.embeddings_matrix = np.array([emp.embedding for emp in self.employees])
@@ -56,7 +67,7 @@ class CollabEngine:
             print(f"Error generating embeddings: {e}")
             # Set empty embeddings as fallback
             for emp in self.employees:
-                emp.embedding = [0.0] * 1536  # Default dimension for text-embedding-3-small
+                emp.embedding = [0.0] * 768  # Default dimension for text-embedding-004 is 768
             self.embeddings_matrix = None # Ensure matrix is reset if error occurs
 
     def find_similar_employees(self, target_employee_id: str, top_k: int = 5) -> List[Dict]:
@@ -106,6 +117,193 @@ class CollabEngine:
             })
         
         return recommendations
+
+    def search_employees(self, query: str, top_k: int = 10) -> List[Dict]:
+        """
+        Search employees using a hybrid approach:
+        - Keyword matching (exact and partial)
+        - Semantic search (embedding similarity)
+        """
+        if not self.employees:
+            return []
+
+        print(f"Searching for: {query}")
+        
+        # 1. Compute Embedding Similarity
+        try:
+            query_embedding_result = genai.embed_content(
+                model="models/text-embedding-004",
+                content=query,
+                task_type="retrieval_query"
+            )
+            query_embedding = query_embedding_result['embedding']
+        except Exception as e:
+            print(f"Error generating query embedding: {e}")
+            query_embedding = [0.0] * 768
+
+        # Calculate cosine similarity if matrix exists
+        semantic_scores = np.zeros(len(self.employees))
+        if self.embeddings_matrix is not None:
+            norm_query = np.linalg.norm(query_embedding)
+            all_norms = np.linalg.norm(self.embeddings_matrix, axis=1)
+            # Avoid division by zero
+            all_norms[all_norms == 0] = 1e-9
+            if norm_query == 0: norm_query = 1e-9
+            
+            dot_products = np.dot(self.embeddings_matrix, query_embedding)
+            semantic_scores = dot_products / (all_norms * norm_query)
+
+        # 2. Compute Keyword Scores
+        query_terms = query.lower().split()
+        keyword_scores = np.zeros(len(self.employees))
+        
+        results = []
+        for idx, emp in enumerate(self.employees):
+            # Prepare text for keyword search
+            # We search in skills, tools, domain knowledge (if any), projects, title
+            searchable_text = f"{emp.name} {emp.profile.role} {emp.profile.department} "
+            searchable_text += " ".join(emp.profile.skills) + " "
+            searchable_text += " ".join(emp.profile.tools) + " "
+            searchable_text += " ".join([p.name for p in emp.profile.projects]) + " "
+            searchable_text += " ".join([p.description for p in emp.profile.projects])
+            
+            searchable_text_lower = searchable_text.lower()
+            
+            # Calculate keyword score
+            k_score = 0.0
+            matched_terms = []
+            
+            # Exact phrase match bonus
+            if query.lower() in searchable_text_lower:
+                k_score += 0.4
+            
+            # Term matching
+            for term in query_terms:
+                if term in searchable_text_lower:
+                    k_score += 0.2
+                    matched_terms.append(term)
+            
+            keyword_scores[idx] = min(k_score, 0.6) # Cap keyword contribution
+            
+            # 3. Combined Score
+            # Weights: Keyword (0.4) + Partial/Fuzzy (0.2 - handled in keyword) + Embedding (0.4)
+            # We'll just sum them with weights
+            final_score = (keyword_scores[idx] * 0.6) + (semantic_scores[idx] * 0.4)
+            
+            # Normalize to 0-1 range roughly, though it might exceed 1 slightly with bonuses
+            # Let's clip it
+            final_score = min(final_score, 1.0)
+            
+            if final_score > 0.1: # Threshold to filter noise
+                results.append({
+                    "employee": emp,
+                    "score": float(final_score),
+                    "whyMatched": self._compute_search_reason(emp, query, matched_terms)
+                })
+
+        # Sort by score descending
+        results.sort(key=lambda x: x["score"], reverse=True)
+        
+        return results[:top_k]
+
+    def search_employees_by_name(self, name_query: str, top_k: int = 10) -> List[Dict]:
+        """
+        Search employees by name using fuzzy matching.
+        """
+        if not self.employees:
+            return []
+
+        print(f"Searching for name: {name_query}")
+        
+        results = []
+        query_lower = name_query.lower()
+        
+        for emp in self.employees:
+            score = 0.0
+            reasons = []
+            
+            name_lower = emp.name.lower()
+            email_lower = emp.email.lower()
+            
+            # 1. Exact match (highest score)
+            if query_lower == name_lower:
+                score = 1.0
+                reasons.append(f"Exact name match: {emp.name}")
+            
+            # 2. Substring match
+            elif query_lower in name_lower:
+                score = 0.8
+                reasons.append(f"Name contains '{name_query}'")
+            
+            # 3. Fuzzy match using SequenceMatcher
+            else:
+                # Check similarity ratio
+                matcher = difflib.SequenceMatcher(None, query_lower, name_lower)
+                similarity = matcher.ratio()
+                
+                # Check partial ratio (if query is a part of the name but with typos)
+                # We can simulate partial ratio by checking if the matching block is significant
+                match = matcher.find_longest_match(0, len(query_lower), 0, len(name_lower))
+                if match.size > 2: # At least 3 chars match
+                    # Boost score if the matched block is a significant portion of the query
+                    if match.size / len(query_lower) > 0.7:
+                        similarity = max(similarity, 0.7)
+                
+                if similarity > 0.6: # Threshold for fuzzy match
+                    score = similarity * 0.9 # Penalty for being fuzzy
+                    reasons.append(f"Similar name to '{name_query}'")
+            
+            # 4. Email prefix match
+            if score < 1.0:
+                email_prefix = email_lower.split('@')[0]
+                if query_lower == email_prefix:
+                    score = max(score, 0.9)
+                    reasons.append(f"Matches email prefix: {emp.email}")
+                elif query_lower in email_prefix:
+                    score = max(score, 0.7)
+                    reasons.append(f"Matches part of email: {emp.email}")
+
+            if score > 0.4:
+                results.append({
+                    "employee": emp,
+                    "score": float(score),
+                    "whyMatched": reasons
+                })
+        
+        # Sort by score descending
+        results.sort(key=lambda x: x["score"], reverse=True)
+        
+        return results[:top_k]
+
+    def _compute_search_reason(self, emp: Employee, query: str, matched_terms: List[str]) -> List[str]:
+        """Generate reasons why this employee matched the search query."""
+        reasons = []
+        
+        # Check for skill matches
+        query_lower = query.lower()
+        matched_skills = [s for s in emp.profile.skills if s.lower() in query_lower]
+        if matched_skills:
+            reasons.append(f"Matches skill{'s' if len(matched_skills)>1 else ''}: {', '.join(matched_skills[:3])}.")
+            
+        # Check for tool matches
+        matched_tools = [t for t in emp.profile.tools if t.lower() in query_lower]
+        if matched_tools:
+            reasons.append(f"Experience with tool{'s' if len(matched_tools)>1 else ''}: {', '.join(matched_tools[:3])}.")
+            
+        # Check for project matches
+        matched_projects = [p.name for p in emp.profile.projects if query_lower in p.name.lower() or query_lower in p.description.lower()]
+        if matched_projects:
+            reasons.append(f"Worked on relevant project: {matched_projects[0]}.")
+            
+        # Check for role/title match
+        if query_lower in emp.profile.role.lower():
+            reasons.append(f"Current role is {emp.profile.role}.")
+            
+        # Fallback if no specific matches found but score was high (likely semantic)
+        if not reasons:
+            reasons.append("Profile content is semantically similar to your search.")
+            
+        return reasons[:3]
     
     def _compute_reason(self, target_emp: Employee, candidate_emp: Employee) -> str:
         """Generates a simple reason for the match based on shared skills and projects."""
@@ -164,16 +362,14 @@ class CollabEngine:
         """
         
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                response_format={"type": "json_object"}
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    response_mime_type="application/json"
+                )
             )
-            content = response.choices[0].message.content
+            content = response.text
             return json.loads(content)
         except Exception as e:
             print(f"Error generating match reasons: {e}")
@@ -272,16 +468,14 @@ Return as JSON:
 Focus on complementary skills, shared expertise, and concrete collaboration opportunities."""
         
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                response_format={"type": "json_object"}
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    response_mime_type="application/json"
+                )
             )
-            content = json.loads(response.choices[0].message.content)
+            content = json.loads(response.text)
             return (
                 content.get("reasonSummary", "Strong skill overlap and complementary expertise."),
                 content.get("collaborationSuggestions", [
@@ -316,28 +510,49 @@ Focus on complementary skills, shared expertise, and concrete collaboration oppo
             context += f"  Match Score: {rec['score']:.2f}\n"
         
         prompt = f"""
-        You are CollabConnect, an expert in organizational dynamics.
-        Analyze the following employee and their recommended connections.
-        
+        You are Talent Navigator, an expert in organizational dynamics, collaboration design, and cross-team alignment.
+
+        Your purpose is to transform structured match data — including similarity scores, shared skills, project overlap, domain alignment, and keyword-based search results — into clear, motivational, and actionable human-readable insights.
+
+        You will be given a data package in the variable {{context}}, which may include:
+        - The target employee’s background
+        - A list of recommended or matched colleagues
+        - Match percentages or search relevance scores
+        - "Why recommended" or "why matched" explanations
+        - Extracted skill and project overlaps
+        - Collaboration opportunity metadata
+
+        Using this data, produce a concise but high-value collaboration summary that includes:
+
+        1. Why these individuals were selected:
+           - Highlight deeper thematic connections such as shared technical focus areas, complementary strengths, parallel project histories, or domain alignment.
+           - Interpret the relevance rather than restating raw data.
+
+        2. Specific collaboration opportunities:
+           - Provide 2–4 actionable suggestions (mentorship, joint projects, cross-functional knowledge sharing, combining complementary skills, or accelerating work in shared areas).
+
+        3. Potential organizational impact:
+           - Describe how these connections can reduce silos, accelerate delivery, strengthen cross-team workflows, expand knowledge sharing, or drive innovation.
+
+        Style Requirements:
+        - Professional, clear, and friendly.
+        - Action-oriented and encouraging.
+        - No speculative personal attributes.
+        - 3–5 short paragraphs.
+        - Do not reveal any underlying scoring algorithms or system logic.
+
+        Now analyze the following data and produce the collaboration summary:
+
         {context}
-        
-        Produce a human-friendly collaboration summary that explains:
-        1. Why these people were selected (look for deeper thematic connections beyond just keyword matches).
-        2. Specific ways they can collaborate (e.g., mentoring, cross-pollination of ideas, specific tech stack alignment).
-        3. Potential impact on the organization.
-        
-        Keep it concise, encouraging, and actionable.
         """
         
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4o", # or gpt-3.5-turbo
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7
+                )
             )
-            return response.choices[0].message.content
+            return response.text
         except Exception as e:
             return f"Error generating summary: {e}"

@@ -1,4 +1,14 @@
 import os
+import sys
+# Monkeypatch for Python < 3.10 compatibility
+if sys.version_info < (3, 10):
+    try:
+        import importlib.metadata
+        import importlib_metadata
+        if not hasattr(importlib.metadata, "packages_distributions"):
+            importlib.metadata.packages_distributions = importlib_metadata.packages_distributions
+    except ImportError:
+        pass
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -22,17 +32,26 @@ app.add_middleware(
 )
 
 # Initialize Engine
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.getenv("GEMINI_API_KEY")
+if api_key:
+    print(f"API Key loaded: {api_key[:4]}...{api_key[-4:]}")
+else:
+    print("API Key NOT loaded from env")
 engine = CollabEngine(api_key=api_key)
 
 # Load initial data
 print("Loading synthetic data...")
 employees = generate_synthetic_data(30)
+print("Generated Employees:")
+for emp in employees[:5]:
+    print(f"- {emp.name}")
 engine.load_employees(employees)
 print("Data loaded.")
 
 class RecommendRequest(BaseModel):
-    resumeText: str
+    resumeText: Optional[str] = None
+    searchQuery: Optional[str] = None
+    mode: str = "resume"  # "resume" or "search"
 
 class ProjectResponse(BaseModel):
     name: str
@@ -66,13 +85,98 @@ class Recommendation(BaseModel):
     summary: str
     avatarUrl: str
     resumeMatch: Optional[ResumeMatchResponse] = None
+    resumeMatch: Optional[ResumeMatchResponse] = None
     collaborationSuggestions: List[str] = []
+    whyMatched: List[str] = []
 
 class RecommendResponse(BaseModel):
     recommendations: List[Recommendation]
 
 @app.post("/api/recommend", response_model=RecommendResponse)
 async def recommend(request: RecommendRequest):
+    if request.mode == "search":
+        if not request.searchQuery:
+            raise HTTPException(status_code=400, detail="Search query is required for search mode")
+            
+        recommendations = engine.search_employees(request.searchQuery)
+        
+        response_list = []
+        for rec in recommendations:
+            emp = rec['employee']
+            
+            # Create project responses
+            projects_response = [
+                ProjectResponse(name=p.name, description=p.description, tech=p.tech)
+                for p in emp.profile.projects
+            ]
+            
+            response_list.append(Recommendation(
+                id=emp.id,
+                name=emp.name,
+                title=emp.profile.role,
+                department=emp.profile.department,
+                location=emp.profile.location,
+                email=emp.email,
+                manager=emp.profile.manager,
+                experienceYears=emp.profile.experience_years,
+                professionalSummary=emp.profile.professional_summary,
+                skills=emp.profile.skills,
+                primarySkills=emp.profile.primary_skills,
+                secondarySkills=emp.profile.secondary_skills,
+                tools=emp.profile.tools,
+                projects=projects_response,
+                matchScore=rec['score'],
+                summary=" • ".join(rec['whyMatched']), # Use whyMatched as summary for search
+                avatarUrl=f"https://ui-avatars.com/api/?name={emp.name.replace(' ', '+')}&background=random",
+                resumeMatch=None, # No resume match details for search
+                collaborationSuggestions=[],
+                whyMatched=rec['whyMatched']
+            ))
+            
+        return RecommendResponse(recommendations=response_list)
+
+    if request.mode == "name_search":
+        if not request.searchQuery:
+            raise HTTPException(status_code=400, detail="Search query is required for name search mode")
+            
+        recommendations = engine.search_employees_by_name(request.searchQuery)
+        
+        response_list = []
+        for rec in recommendations:
+            emp = rec['employee']
+            
+            # Create project responses
+            projects_response = [
+                ProjectResponse(name=p.name, description=p.description, tech=p.tech)
+                for p in emp.profile.projects
+            ]
+            
+            response_list.append(Recommendation(
+                id=emp.id,
+                name=emp.name,
+                title=emp.profile.role,
+                department=emp.profile.department,
+                location=emp.profile.location,
+                email=emp.email,
+                manager=emp.profile.manager,
+                experienceYears=emp.profile.experience_years,
+                professionalSummary=emp.profile.professional_summary,
+                skills=emp.profile.skills,
+                primarySkills=emp.profile.primary_skills,
+                secondarySkills=emp.profile.secondary_skills,
+                tools=emp.profile.tools,
+                projects=projects_response,
+                matchScore=rec['score'],
+                summary=" • ".join(rec['whyMatched']),
+                avatarUrl=f"https://ui-avatars.com/api/?name={emp.name.replace(' ', '+')}&background=random",
+                resumeMatch=None,
+                collaborationSuggestions=[],
+                whyMatched=rec['whyMatched']
+            ))
+            
+        return RecommendResponse(recommendations=response_list)
+
+    # Default to Resume Mode
     if not request.resumeText:
         raise HTTPException(status_code=400, detail="Resume text is required")
 
@@ -165,4 +269,5 @@ def health():
 
 if __name__ == "__main__":
     import uvicorn
+    print("Starting Uvicorn...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -22,26 +22,34 @@ function App() {
     setTimeout(() => setSelectedEmployee(null), 300); // Delay to allow animation
   };
 
-  const handleTextExtracted = async (text: string) => {
+  const handleTextExtracted = async (data: { text: string; mode: 'resume' | 'search' | 'name_search' }) => {
     setIsFetching(true);
     setError(null);
 
     try {
       // Call the backend API
+      let payload: any = { mode: data.mode };
+
+      if (data.mode === 'search' || data.mode === 'name_search') {
+        payload.searchQuery = data.text;
+      } else {
+        payload.resumeText = data.text;
+      }
+
       const response = await fetch('http://localhost:8000/api/recommend', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ resumeText: text }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         throw new Error('Failed to fetch recommendations');
       }
 
-      const data = await response.json();
-      setRecommendations(data.recommendations);
+      const responseData = await response.json();
+      setRecommendations(responseData.recommendations);
     } catch (err) {
       console.error(err);
       setError('Failed to get recommendations from the server. Is the backend running?');
