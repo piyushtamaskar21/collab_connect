@@ -12,9 +12,55 @@ function App() {
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeProfile | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const handleReadMore = (employee: Employee) => {
+  const [currentQuery, setCurrentQuery] = useState<string>('');
+
+  const handleReadMore = async (employee: Employee) => {
+    // Open modal immediately with existing data
     setSelectedEmployee(employee as EmployeeProfile);
     setIsModalOpen(true);
+
+    // If we have a search query and need to fetch detailed match info (lazy load)
+    if (currentQuery && (!employee.resumeMatch || !employee.collaborationSuggestions?.length)) {
+      try {
+        const response = await fetch('http://localhost:8000/api/match-details', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            targetText: currentQuery,
+            employeeId: employee.id
+          }),
+        });
+
+        if (response.ok) {
+          const details = await response.json();
+
+          // Update the selected employee with new details
+          setSelectedEmployee(prev => {
+            if (prev && prev.id === employee.id) {
+              return {
+                ...prev,
+                resumeMatch: details.resumeMatch,
+                collaborationSuggestions: details.collaborationSuggestions
+              };
+            }
+            return prev;
+          });
+
+          // Also update the recommendation in the main list so we don't fetch again
+          setRecommendations(prev =>
+            prev.map(emp =>
+              emp.id === employee.id
+                ? { ...emp, resumeMatch: details.resumeMatch, collaborationSuggestions: details.collaborationSuggestions }
+                : emp
+            )
+          );
+        }
+      } catch (err) {
+        console.error("Failed to fetch match details:", err);
+      }
+    }
   };
 
   const closeModal = () => {
@@ -25,6 +71,7 @@ function App() {
   const handleTextExtracted = async (data: { text: string; mode: 'resume' | 'search' | 'name_search' }) => {
     setIsFetching(true);
     setError(null);
+    setCurrentQuery(data.text); // Store query for lazy loading
 
     try {
       // Call the backend API

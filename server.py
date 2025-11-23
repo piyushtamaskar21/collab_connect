@@ -98,44 +98,123 @@ async def recommend(request: RecommendRequest):
         if not request.searchQuery:
             raise HTTPException(status_code=400, detail="Search query is required for search mode")
             
-        recommendations = engine.search_employees(request.searchQuery)
+        # Check for "Typed Background Profile" (Heuristic: > 8 words)
+        is_typed_background = len(request.searchQuery.split()) > 8
         
-        response_list = []
-        for rec in recommendations:
-            emp = rec['employee']
+        if is_typed_background:
+            print(f"Typed background detected (len={len(request.searchQuery.split())}). Switching to profile mode.")
+            # Treat as resume/profile
+            raw_text = request.searchQuery
             
-            # Create project responses
-            projects_response = [
-                ProjectResponse(name=p.name, description=p.description, tech=p.tech)
-                for p in emp.profile.projects
-            ]
+            # Parse structured data
+            parsed_profile = engine.parse_profile_from_text(raw_text)
             
-            response_list.append(Recommendation(
-                id=emp.id,
-                name=emp.name,
-                title=emp.profile.role,
-                department=emp.profile.department,
-                location=emp.profile.location,
-                email=emp.email,
-                manager=emp.profile.manager,
-                experienceYears=emp.profile.experience_years,
-                professionalSummary=emp.profile.professional_summary,
-                skills=emp.profile.skills,
-                primarySkills=emp.profile.primary_skills,
-                secondarySkills=emp.profile.secondary_skills,
-                tools=emp.profile.tools,
-                projects=projects_response,
-                matchScore=rec['score'],
-                summary=" • ".join(rec['whyMatched']), # Use whyMatched as summary for search
-                avatarUrl=f"https://ui-avatars.com/api/?name={emp.name.replace(' ', '+')}&background=random",
-                resumeMatch=None, # No resume match details for search
-                collaborationSuggestions=[],
-                whyMatched=rec['whyMatched']
-            ))
-            
-        return RecommendResponse(recommendations=response_list)
+            # Create target profile object
+            # Mock Project objects for compatibility
+            mock_projects = []
+            for p in parsed_profile.get("projects", []):
+                mock_p = type('obj', (object,), {
+                    'name': p.get('name', 'Unknown Project'), 
+                    'description': p.get('description', ''), 
+                    'tech': p.get('tech', [])
+                })
+                mock_projects.append(mock_p)
 
-    if request.mode == "name_search":
+            target_profile = Employee(
+                id="typed_search_user",
+                name="Search User",
+                email="user@example.com",
+                profile=type('obj', (object,), {
+                    'role': parsed_profile.get("role", "Unknown"), 
+                    'department': parsed_profile.get("department", "Unknown"), 
+                    'seniority': parsed_profile.get("seniority", "Unknown"),
+                    'skills': parsed_profile.get("skills", []), 
+                    'projects': mock_projects, 
+                    'interests': []
+                }),
+                raw_text=raw_text
+            )
+            
+            # Use embedding search on the text
+            recommendations = engine.find_similar_employees_by_text(raw_text)
+            
+            # Proceed to parallel detailed match generation (shared logic below)
+            # We need to jump to the parallel execution block. 
+            # To avoid code duplication, we can set a flag or structure the code to fall through.
+            # But since we are inside an if/else block, we'll duplicate the parallel execution logic for clarity 
+            # or refactor. Given the constraints, duplication with a shared helper function is safest if possible,
+            # but defining a helper inside `recommend` is easier.
+            
+        else:
+            # Standard Keyword/Short Search
+            recommendations = engine.search_employees(request.searchQuery)
+            
+            # Create temp target profile from query for detailed matching
+            target_profile = Employee(
+                id="search_query",
+                name="Search Query",
+                email="search@example.com",
+                profile=type('obj', (object,), {
+                    'role': 'Search Context', 
+                    'department': 'Unknown', 
+                    'seniority': 'Unknown',
+                    'skills': request.searchQuery.split(), # Treat query terms as skills
+                    'projects': [], 
+                    'interests': []
+                }),
+                raw_text=request.searchQuery
+            )
+            
+            # For standard search, we might skip the heavy LLM detailed match for speed, 
+            # BUT the user wants "Why Recommended" to be high quality.
+            # The current implementation does a "FAST mode - no LLM" for standard search (line 124 in original).
+            # We should keep that for short queries to be fast.
+            
+            response_list = []
+            for rec in recommendations:
+                emp = rec['employee']
+                # Fast match (heuristic)
+                match_details = engine.generate_detailed_match(target_profile, emp, use_llm=False)
+                
+                resume_match = ResumeMatchResponse(
+                    sharedSkills=match_details['shared_skills'],
+                    matchingProjects=match_details['matching_projects'],
+                    matchingDomains=match_details['matching_domains'],
+                    techOverlap=match_details['tech_overlap'],
+                    matchingSeniority=match_details['matching_seniority'],
+                    reasonSummary=match_details['reason_summary']
+                )
+                
+                projects_response = [
+                    ProjectResponse(name=p.name, description=p.description, tech=p.tech)
+                    for p in emp.profile.projects
+                ]
+                
+                response_list.append(Recommendation(
+                    id=emp.id,
+                    name=emp.name,
+                    title=emp.profile.role,
+                    department=emp.profile.department,
+                    location=emp.profile.location,
+                    email=emp.email,
+                    manager=emp.profile.manager,
+                    experienceYears=emp.profile.experience_years,
+                    professionalSummary=emp.profile.professional_summary,
+                    skills=emp.profile.skills,
+                    primarySkills=emp.profile.primary_skills,
+                    secondarySkills=emp.profile.secondary_skills,
+                    tools=emp.profile.tools,
+                    projects=projects_response,
+                    matchScore=rec['score'],
+                    summary=match_details['reason_summary'],
+                    avatarUrl=f"https://ui-avatars.com/api/?name={emp.name.replace(' ', '+')}&background=random",
+                    resumeMatch=resume_match,
+                    collaborationSuggestions=match_details['collaboration_suggestions'],
+                    whyMatched=rec['whyMatched']
+                ))
+            return RecommendResponse(recommendations=response_list)
+
+    elif request.mode == "name_search":
         if not request.searchQuery:
             raise HTTPException(status_code=400, detail="Search query is required for name search mode")
             
@@ -144,8 +223,6 @@ async def recommend(request: RecommendRequest):
         response_list = []
         for rec in recommendations:
             emp = rec['employee']
-            
-            # Create project responses
             projects_response = [
                 ProjectResponse(name=p.name, description=p.description, tech=p.tech)
                 for p in emp.profile.projects
@@ -173,51 +250,76 @@ async def recommend(request: RecommendRequest):
                 collaborationSuggestions=[],
                 whyMatched=rec['whyMatched']
             ))
-            
         return RecommendResponse(recommendations=response_list)
 
-    # Default to Resume Mode
-    if not request.resumeText:
+    else:
+        # Default to Resume Mode (or Typed Background fall-through)
+        # If we fell through from "is_typed_background", we need to handle it here.
+        # But we can't easily fall through from the `if` block above without refactoring.
+        # So we'll handle the "Resume Mode" logic here and copy it for the typed background case above?
+        # No, better to unify.
+        pass
+
+    # ---- UNIFIED RESUME / TYPED BACKGROUND LOGIC ----
+    # If we are here, it's either explicit resume mode OR typed background mode.
+    
+    if request.mode == "search" and is_typed_background:
+        raw_text = request.searchQuery
+    elif request.resumeText:
+        raw_text = request.resumeText
+    else:
         raise HTTPException(status_code=400, detail="Resume text is required")
 
-    # Create a temporary employee object for the target
-    # In a real app, we'd parse the resume text to extract skills/role first
-    # Here we'll just use the raw text for embedding generation if the engine supports it
-    # or we might need to fake a profile.
-    # Since our engine uses `emp.raw_text` in `_compute_embeddings`, we can create a dummy emp.
+    # Parse structured data (Improved for BOTH resume and typed background)
+    parsed_profile = engine.parse_profile_from_text(raw_text)
     
-    # Hack: We need to add this temp employee to the engine to get its embedding, 
-    # then find similar, then remove it? Or just expose a method to get embedding for text.
-    # For this POC, let's add it, find similar, then remove.
-    
-    target_id = "temp_target"
+    mock_projects = []
+    for p in parsed_profile.get("projects", []):
+        mock_p = type('obj', (object,), {
+            'name': p.get('name', 'Unknown Project'), 
+            'description': p.get('description', ''), 
+            'tech': p.get('tech', [])
+        })
+        mock_projects.append(mock_p)
+
     target_profile = Employee(
-        id=target_id,
+        id="target_user",
         name="Candidate",
         email="candidate@example.com",
         profile=type('obj', (object,), {
-            'role': 'Unknown', 'department': 'Unknown', 'seniority': 'Unknown',
-            'skills': [], 'projects': [], 'interests': []
+            'role': parsed_profile.get("role", "Unknown"), 
+            'department': parsed_profile.get("department", "Unknown"), 
+            'seniority': parsed_profile.get("seniority", "Unknown"),
+            'skills': parsed_profile.get("skills", []), 
+            'projects': mock_projects, 
+            'interests': []
         }),
-        raw_text=request.resumeText
+        raw_text=raw_text
     )
     
-    # We need to re-compute embeddings including this new one. 
-    # This is inefficient but fine for POC.
-    current_employees = engine.employees
-    engine.load_employees(current_employees + [target_profile])
+    # Optimized Search
+    recommendations = engine.find_similar_employees_by_text(raw_text)
     
-    recommendations = engine.find_similar_employees(target_id)
+    # Parallelize LLM Calls
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
     
-    # Generate detailed match data for each recommendation
+    loop = asyncio.get_running_loop()
+    
+    def generate_details(emp):
+        return engine.generate_detailed_match(target_profile, emp)
+
+    with ThreadPoolExecutor() as pool:
+        tasks = [
+            loop.run_in_executor(pool, generate_details, rec['employee'])
+            for rec in recommendations
+        ]
+        match_details_list = await asyncio.gather(*tasks)
+
     response_list = []
-    for rec in recommendations:
+    for rec, match_details in zip(recommendations, match_details_list):
         emp = rec['employee']
         
-        # Generate detailed match explanation
-        match_details = engine.generate_detailed_match(target_profile, emp)
-        
-        # Create resume match response
         resume_match = ResumeMatchResponse(
             sharedSkills=match_details['shared_skills'],
             matchingProjects=match_details['matching_projects'],
@@ -227,14 +329,10 @@ async def recommend(request: RecommendRequest):
             reasonSummary=match_details['reason_summary']
         )
         
-        # Create project responses
         projects_response = [
             ProjectResponse(name=p.name, description=p.description, tech=p.tech)
             for p in emp.profile.projects
         ]
-        
-        # Use LLM-generated reason for short summary
-        short_summary = match_details['reason_summary']
         
         response_list.append(Recommendation(
             id=emp.id,
@@ -252,16 +350,62 @@ async def recommend(request: RecommendRequest):
             tools=emp.profile.tools,
             projects=projects_response,
             matchScore=rec['score'],
-            summary=short_summary,
+            summary=match_details['reason_summary'],
             avatarUrl=f"https://ui-avatars.com/api/?name={emp.name.replace(' ', '+')}&background=random",
             resumeMatch=resume_match,
-            collaborationSuggestions=match_details['collaboration_suggestions']
+            collaborationSuggestions=match_details['collaboration_suggestions'],
+            whyMatched=[]
         ))
         
-    # Restore original list to avoid polluting state
-    engine.load_employees(current_employees)
-    
     return RecommendResponse(recommendations=response_list)
+
+class MatchDetailsRequest(BaseModel):
+    targetText: str
+    employeeId: str
+
+class MatchDetailsResponse(BaseModel):
+    resumeMatch: ResumeMatchResponse
+    collaborationSuggestions: List[str]
+
+@app.post("/api/match-details", response_model=MatchDetailsResponse)
+async def get_match_details(request: MatchDetailsRequest):
+    # Find the employee
+    emp = next((e for e in engine.employees if e.id == request.employeeId), None)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+        
+    # Create temp target profile from text
+    target_profile = Employee(
+        id="search_query",
+        name="Search Context",
+        email="search@example.com",
+        profile=type('obj', (object,), {
+            'role': 'Search Context', 
+            'department': 'Unknown', 
+            'seniority': 'Unknown',
+            'skills': request.targetText.split(), 
+            'projects': [], 
+            'interests': []
+        }),
+        raw_text=request.targetText
+    )
+    
+    # Generate detailed match info using LLM
+    match_details = engine.generate_detailed_match(target_profile, emp, use_llm=True)
+    
+    resume_match = ResumeMatchResponse(
+        sharedSkills=match_details['shared_skills'],
+        matchingProjects=match_details['matching_projects'],
+        matchingDomains=match_details['matching_domains'],
+        techOverlap=match_details['tech_overlap'],
+        matchingSeniority=match_details['matching_seniority'],
+        reasonSummary=match_details['reason_summary']
+    )
+    
+    return MatchDetailsResponse(
+        resumeMatch=resume_match,
+        collaborationSuggestions=match_details['collaboration_suggestions']
+    )
 
 @app.get("/health")
 def health():

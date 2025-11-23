@@ -118,16 +118,104 @@ class CollabEngine:
         
         return recommendations
 
+    def find_similar_employees_by_text(self, text: str, top_k: int = 5) -> List[Dict]:
+        """Find similar employees using a raw text query (e.g., resume)."""
+        if self.embeddings_matrix is None or not self.employees:
+            return []
+
+        print("Generating embedding for resume text...")
+        try:
+            result = genai.embed_content(
+                model="models/text-embedding-004",
+                content=text,
+                task_type="retrieval_query"
+            )
+            query_embedding = result['embedding']
+        except Exception as e:
+            print(f"Error generating embedding: {e}")
+            return []
+
+        # Compute cosine similarity
+        norm_query = np.linalg.norm(query_embedding)
+        all_norms = np.linalg.norm(self.embeddings_matrix, axis=1)
+        
+        # Avoid division by zero
+        all_norms[all_norms == 0] = 1e-9
+        if norm_query == 0: norm_query = 1e-9
+        
+        dot_products = np.dot(self.embeddings_matrix, query_embedding)
+        cosine_sim = dot_products / (all_norms * norm_query)
+        
+        # Get top_k similar indices
+        sorted_indices = cosine_sim.argsort()[::-1]
+        
+        recommendations = []
+        
+        for idx in sorted_indices:
+            if len(recommendations) >= top_k:
+                break
+            
+            emp = self.employees[idx]
+            score = cosine_sim[idx]
+            
+            # Filter low relevance
+            if score > 0.2:
+                recommendations.append({
+                    "employee": emp,
+                    "score": float(score),
+                    "reason": "" # Will be computed later
+                })
+        
+        return recommendations
+
+    def _is_likely_name(self, query: str) -> bool:
+        """
+        Heuristic to check if a query is likely a name.
+        - 2-3 words, capitalized (e.g. "John Doe")
+        - No common technical keywords
+        """
+        parts = query.split()
+        if len(parts) > 3 or len(parts) < 1:
+            return False
+            
+        # Check for common tech keywords that might look like names but aren't
+        tech_keywords = {'python', 'java', 'react', 'node', 'aws', 'cloud', 'data', 'manager', 'lead', 'developer', 'engineer'}
+        if any(p.lower() in tech_keywords for p in parts):
+            return False
+            
+        # If capitalized and short, likely a name
+        if all(p[0].isupper() for p in parts):
+            return True
+            
+        return False
+
+    def _fuzzy_match(self, term: str, text: str, threshold: float = 0.8) -> bool:
+        """Check if term fuzzy matches any word in text."""
+        term_lower = term.lower()
+        text_lower = text.lower()
+        
+        if term_lower in text_lower:
+            return True
+            
+        # Check individual words for fuzzy match
+        for word in text_lower.split():
+            if difflib.SequenceMatcher(None, term_lower, word).ratio() > threshold:
+                return True
+        return False
+
     def search_employees(self, query: str, top_k: int = 10) -> List[Dict]:
         """
-        Search employees using a hybrid approach:
-        - Keyword matching (exact and partial)
-        - Semantic search (embedding similarity)
+        Search employees using strict embedding similarity for non-name queries.
         """
         if not self.employees:
             return []
 
-        print(f"Searching for: {query}")
+        # STRICT RULE: If it looks like a name, ONLY do name search
+        if self._is_likely_name(query):
+            print(f"Query '{query}' detected as name. Routing to name search.")
+            return self.search_employees_by_name(query, top_k)
+
+        print(f"Embedding similarity search triggered for: {query}")
         
         # 1. Compute Embedding Similarity
         try:
@@ -139,72 +227,45 @@ class CollabEngine:
             query_embedding = query_embedding_result['embedding']
         except Exception as e:
             print(f"Error generating query embedding: {e}")
-            query_embedding = [0.0] * 768
+            return []
 
         # Calculate cosine similarity if matrix exists
-        semantic_scores = np.zeros(len(self.employees))
-        if self.embeddings_matrix is not None:
-            norm_query = np.linalg.norm(query_embedding)
-            all_norms = np.linalg.norm(self.embeddings_matrix, axis=1)
-            # Avoid division by zero
-            all_norms[all_norms == 0] = 1e-9
-            if norm_query == 0: norm_query = 1e-9
-            
-            dot_products = np.dot(self.embeddings_matrix, query_embedding)
-            semantic_scores = dot_products / (all_norms * norm_query)
+        if self.embeddings_matrix is None:
+            print("Embeddings matrix is empty. Cannot perform search.")
+            return []
 
-        # 2. Compute Keyword Scores
-        query_terms = query.lower().split()
-        keyword_scores = np.zeros(len(self.employees))
+        norm_query = np.linalg.norm(query_embedding)
+        all_norms = np.linalg.norm(self.embeddings_matrix, axis=1)
         
+        # Avoid division by zero
+        all_norms[all_norms == 0] = 1e-9
+        if norm_query == 0: norm_query = 1e-9
+        
+        dot_products = np.dot(self.embeddings_matrix, query_embedding)
+        semantic_scores = dot_products / (all_norms * norm_query)
+
+        # Collect results
         results = []
-        for idx, emp in enumerate(self.employees):
-            # Prepare text for keyword search
-            # We search in skills, tools, domain knowledge (if any), projects, title
-            searchable_text = f"{emp.name} {emp.profile.role} {emp.profile.department} "
-            searchable_text += " ".join(emp.profile.skills) + " "
-            searchable_text += " ".join(emp.profile.tools) + " "
-            searchable_text += " ".join([p.name for p in emp.profile.projects]) + " "
-            searchable_text += " ".join([p.description for p in emp.profile.projects])
-            
-            searchable_text_lower = searchable_text.lower()
-            
-            # Calculate keyword score
-            k_score = 0.0
-            matched_terms = []
-            
-            # Exact phrase match bonus
-            if query.lower() in searchable_text_lower:
-                k_score += 0.4
-            
-            # Term matching
-            for term in query_terms:
-                if term in searchable_text_lower:
-                    k_score += 0.2
-                    matched_terms.append(term)
-            
-            keyword_scores[idx] = min(k_score, 0.6) # Cap keyword contribution
-            
-            # 3. Combined Score
-            # Weights: Keyword (0.4) + Partial/Fuzzy (0.2 - handled in keyword) + Embedding (0.4)
-            # We'll just sum them with weights
-            final_score = (keyword_scores[idx] * 0.6) + (semantic_scores[idx] * 0.4)
-            
-            # Normalize to 0-1 range roughly, though it might exceed 1 slightly with bonuses
-            # Let's clip it
-            final_score = min(final_score, 1.0)
-            
-            if final_score > 0.1: # Threshold to filter noise
+        for idx, score in enumerate(semantic_scores):
+            # Filter low relevance
+            if score > 0.25:
+                emp = self.employees[idx]
                 results.append({
                     "employee": emp,
-                    "score": float(final_score),
-                    "whyMatched": self._compute_search_reason(emp, query, matched_terms)
+                    "score": float(score),
+                    "whyMatched": self._compute_search_reason(emp, query, [])
                 })
 
         # Sort by score descending
         results.sort(key=lambda x: x["score"], reverse=True)
+        top_results = results[:top_k]
         
-        return results[:top_k]
+        if top_results:
+            print(f"Top match score: {top_results[0]['score']:.4f}")
+        else:
+            print("No matches found above threshold.")
+            
+        return top_results
 
     def search_employees_by_name(self, name_query: str, top_k: int = 10) -> List[Dict]:
         """
@@ -278,104 +339,152 @@ class CollabEngine:
     def _compute_search_reason(self, emp: Employee, query: str, matched_terms: List[str]) -> List[str]:
         """Generate reasons why this employee matched the search query."""
         reasons = []
-        
-        # Check for skill matches
         query_lower = query.lower()
-        matched_skills = [s for s in emp.profile.skills if s.lower() in query_lower]
+        
+        # Synonyms map
+        synonyms = {
+            'js': 'javascript', 'ts': 'typescript', 'py': 'python', 
+            'ml': 'machine learning', 'ai': 'artificial intelligence',
+            'fe': 'frontend', 'be': 'backend'
+        }
+        
+        # Expand query with synonyms
+        query_terms = query_lower.split()
+        expanded_terms = set(query_terms)
+        for term in query_terms:
+            if term in synonyms:
+                expanded_terms.add(synonyms[term])
+        
+        # Check for skill matches (fuzzy)
+        matched_skills = []
+        for skill in emp.profile.skills:
+            skill_lower = skill.lower()
+            if any(self._fuzzy_match(term, skill_lower) for term in expanded_terms):
+                matched_skills.append(skill)
+        
         if matched_skills:
             reasons.append(f"Matches skill{'s' if len(matched_skills)>1 else ''}: {', '.join(matched_skills[:3])}.")
             
-        # Check for tool matches
-        matched_tools = [t for t in emp.profile.tools if t.lower() in query_lower]
+        # Check for tool matches (fuzzy)
+        matched_tools = []
+        for tool in emp.profile.tools:
+            tool_lower = tool.lower()
+            if any(self._fuzzy_match(term, tool_lower) for term in expanded_terms):
+                matched_tools.append(tool)
+                
         if matched_tools:
             reasons.append(f"Experience with tool{'s' if len(matched_tools)>1 else ''}: {', '.join(matched_tools[:3])}.")
             
         # Check for project matches
-        matched_projects = [p.name for p in emp.profile.projects if query_lower in p.name.lower() or query_lower in p.description.lower()]
+        matched_projects = [p.name for p in emp.profile.projects if any(term in p.name.lower() or term in p.description.lower() for term in expanded_terms)]
         if matched_projects:
             reasons.append(f"Worked on relevant project: {matched_projects[0]}.")
             
         # Check for role/title match
-        if query_lower in emp.profile.role.lower():
+        if any(term in emp.profile.role.lower() for term in expanded_terms):
             reasons.append(f"Current role is {emp.profile.role}.")
             
         # Fallback if no specific matches found but score was high (likely semantic)
         if not reasons:
             reasons.append("Profile content is semantically similar to your search.")
             
-        return reasons[:3]
+        return list(set(reasons))[:3] # Deduplicate and limit
     
     def _compute_reason(self, target_emp: Employee, candidate_emp: Employee) -> str:
-        """Generates a simple reason for the match based on shared skills and projects."""
+        """Generates a simple, deterministic reason for the match based on shared skills and projects."""
+        
+        # 1. Shared Skills
         shared_skills = list(set(target_emp.profile.skills) & set(candidate_emp.profile.skills))
         
-        target_project_names = [p.name for p in target_emp.profile.projects]
-        candidate_project_names = [p.name for p in candidate_emp.profile.projects]
-        common_projects = list(set(target_project_names) & set(candidate_project_names))
+        # 2. Project Overlap (Fuzzy)
+        target_projects = [p.name.lower() for p in target_emp.profile.projects]
+        candidate_projects = [p.name.lower() for p in candidate_emp.profile.projects]
+        
+        common_projects = []
+        for tp in target_projects:
+            for cp in candidate_projects:
+                if self._fuzzy_match(tp, cp, threshold=0.85): # High threshold for project names
+                    common_projects.append(cp.title()) # Capitalize for display
+                    
+        # 3. Domain Categories
+        domains = {
+            'Backend': ['python', 'java', 'go', 'rust', 'api', 'database', 'sql'],
+            'Frontend': ['react', 'vue', 'angular', 'javascript', 'typescript', 'css'],
+            'Data': ['sql', 'python', 'pandas', 'spark', 'kafka', 'etl'],
+            'Mobile': ['ios', 'android', 'swift', 'kotlin', 'react native']
+        }
+        
+        shared_domains = []
+        for domain, keywords in domains.items():
+            t_has = any(k in ' '.join(target_emp.profile.skills).lower() for k in keywords)
+            c_has = any(k in ' '.join(candidate_emp.profile.skills).lower() for k in keywords)
+            if t_has and c_has:
+                shared_domains.append(domain)
 
-        reason_parts = []
-        if shared_skills:
-            reason_parts.append(f"shared skills like {', '.join(shared_skills[:2])}")
-        """Generate a basic reason for the match"""
-        # Extract project names for comparison
-        target_project_names = set([p.name for p in target_emp.profile.projects])
-        candidate_project_names = set([p.name for p in candidate_emp.profile.projects])
-        common_project_names = target_project_names & candidate_project_names
-        
-        common_skills = set(target_emp.profile.skills) & set(candidate_emp.profile.skills)
-        
-        if common_skills and common_project_names:
-            return f"Shared expertise in {', '.join(list(common_skills)[:2])} and similar project experience."
-        elif common_skills:
-            return f"Strong alignment on {', '.join(list(common_skills)[:3])}."
-        elif common_project_names:
-            return f"Experience on similar projects: {', '.join(list(common_project_names)[:2])}."
+        # Generate Sentence
+        if common_projects:
+            return f"Shared experience on similar projects like {common_projects[0]}."
+        elif len(shared_skills) >= 2:
+            return f"Strong alignment on {', '.join(shared_skills[:3])}."
+        elif shared_domains:
+            return f"Both have expertise in {shared_domains[0]} development."
         elif target_emp.profile.department == candidate_emp.profile.department:
-            return f"Both working in {target_emp.profile.department}."
+            return f"Colleagues in the {target_emp.profile.department} department."
         else:
-            return "Complementary background and diverse perspective."
+            return "Complementary technical background and skills."
     
     def generate_match_reasons(self, target_emp: Employee, recommendations: List[Dict]) -> Dict[str, str]:
         print("Generating match reasons using LLM...")
         
-        # Prepare context for LLM
-        target_desc = f"Target: {target_emp.name}, Role: {target_emp.profile.role}, Skills: {', '.join(target_emp.profile.skills)}, Projects: {', '.join(target_emp.profile.projects)}"
+        # Prepare context for LLM as JSON
+        target_data = {
+            "name": target_emp.name,
+            "role": target_emp.profile.role,
+            "skills": target_emp.profile.skills,
+            "projects": [p.name for p in target_emp.profile.projects]
+        }
         
-        candidates_desc = ""
+        candidates_data = []
         for rec in recommendations:
             emp = rec['employee']
-            candidates_desc += f"- ID: {emp.id}, Name: {emp.name}, Role: {emp.profile.role}, Skills: {', '.join(emp.profile.skills)}, Projects: {', '.join(emp.profile.projects)}\n"
-        
+            candidates_data.append({
+                "id": emp.id,
+                "name": emp.name,
+                "role": emp.profile.role,
+                "skills": emp.profile.skills,
+                "projects": [p.name for p in emp.profile.projects]
+            })
+            
         prompt = f"""
-        You are an expert in team building and collaboration.
+        You are an expert in team building. Analyze the following data:
         
-        {target_desc}
+        TARGET: {json.dumps(target_data)}
         
-        Here are the recommended connections for the target employee:
-        {candidates_desc}
+        CANDIDATES: {json.dumps(candidates_data)}
         
-        For EACH candidate, provide a concise, specific reason (1-2 sentences) why they are a good match for the target. 
-        Focus on complementary skills, shared project domains, or potential mentorship.
+        For EACH candidate, provide a concise reason (1 sentence) why they match the target.
         
-        Return the output as a valid JSON object where keys are the candidate IDs and values are the reason strings.
-        Example: {{ "emp123": "Matches due to shared interest in AI...", "emp456": "Can provide mentorship in..." }}
+        STRICT OUTPUT RULES:
+        1. Return ONLY valid JSON.
+        2. Format: {{ "candidate_id": "Reason string..." }}
+        3. Do NOT invent skills or projects. Use only provided data.
+        4. Be specific: Mention exact shared skills or project domains. Avoid generic "good match" phrases.
         """
         
         try:
             response = self.model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.7,
+                    temperature=0.5, # Lower temperature for consistency
                     response_mime_type="application/json"
                 )
             )
-            content = response.text
-            return json.loads(content)
+            return json.loads(response.text)
         except Exception as e:
             print(f"Error generating match reasons: {e}")
             return {}
 
-    def generate_detailed_match(self, target_emp: Employee, matched_emp: Employee) -> dict:
+    def generate_detailed_match(self, target_emp: Employee, matched_emp: Employee, use_llm: bool = True) -> dict:
         """Generate comprehensive match details including shared skills, projects, and LLM-powered suggestions"""
         
         # Calculate shared skills
@@ -387,28 +496,42 @@ class CollabEngine:
         
         # Check for similar project domains
         matching_project_domains = []
-        common_keywords = ['API', 'Database', 'Mobile', 'Data', 'Analytics', 'Payment', 'Migration', 'Pipeline', 'Frontend', 'Backend']
+        common_keywords = ['API', 'Database', 'Mobile', 'Data', 'Analytics', 'Payment', 'Migration', 'Pipeline', 'Frontend', 'Backend', 'Cloud', 'Security', 'DevOps']
         for keyword in common_keywords:
-            if any(keyword in tp for tp in target_projects) and any(keyword in mp for mp in matched_projects):
+            if any(keyword.lower() in tp.lower() for tp in target_projects) and any(keyword.lower() in mp.lower() for mp in matched_projects):
                 matching_project_domains.append(keyword)
         
         # Tech overlap (shared skills that are tech-related)
         tech_keywords = ['Python', 'Java', 'JavaScript', 'TypeScript', 'Go', 'Rust', 'React', 'Angular', 'Vue', 
-                        'SQL', 'PostgreSQL', 'MongoDB', 'Docker', 'Kubernetes', 'AWS', 'GCP', 'Kafka']
+                        'SQL', 'PostgreSQL', 'MongoDB', 'Docker', 'Kubernetes', 'AWS', 'GCP', 'Kafka', 'Redis', 'Elasticsearch', 'Terraform']
         tech_overlap = [skill for skill in shared_skills if skill in tech_keywords]
         
         # Check seniority matching
-        matching_seniority = target_emp.profile.seniority == matched_emp.profile.seniority
+        seniority_levels = {'Junior': 1, 'Mid': 2, 'Senior': 3, 'Lead': 4, 'Staff': 5, 'Principal': 6}
+        t_level = seniority_levels.get(target_emp.profile.seniority, 0)
+        m_level = seniority_levels.get(matched_emp.profile.seniority, 0)
+        matching_seniority = abs(t_level - m_level) <= 1 # Match if within 1 level
         
         # Matching domains
         matching_domains = []
         if target_emp.profile.department == matched_emp.profile.department:
             matching_domains.append(target_emp.profile.department)
         
-        # Generate LLM-powered reason summary and collaboration suggestions
-        reason_summary, collab_suggestions = self._generate_llm_match_content(
-            target_emp, matched_emp, shared_skills, matching_project_domains, tech_overlap
-        )
+        # Generate reason summary and collaboration suggestions
+        if use_llm:
+            reason_summary, collab_suggestions = self._generate_llm_match_content(
+                target_emp, matched_emp, shared_skills, matching_project_domains, tech_overlap
+            )
+        else:
+            # Heuristic fallback
+            reason_summary = self._compute_reason(target_emp, matched_emp)
+            collab_suggestions = []
+            if shared_skills:
+                collab_suggestions.append(f"Collaborate on tasks involving {shared_skills[0]}.")
+            if matching_project_domains:
+                collab_suggestions.append(f"Share knowledge on {matching_project_domains[0]} projects.")
+            if not collab_suggestions:
+                collab_suggestions.append("Connect to discuss shared professional interests.")
         
         return {
             "shared_skills": shared_skills,
@@ -420,130 +543,283 @@ class CollabEngine:
             "collaboration_suggestions": collab_suggestions
         }
     
-    def _generate_llm_match_content(self, target_emp: Employee, matched_emp: Employee, 
-                                     shared_skills: list, matching_projects: list, tech_overlap: list) -> tuple:
-        """Use LLM to generate reason summary and collaboration suggestions"""
+    def parse_profile_from_text(self, text: str) -> Dict:
+        """
+        Uses LLM to parse raw text (resume or typed background) into a structured profile.
+        Extracts: Role, Seniority, Skills, Projects, Department.
+        """
+        print("Parsing profile from text...")
         
-        target_desc = f"""
-Target Employee:
-- Name: {target_emp.name}
-- Role: {target_emp.profile.role}
-- Skills: {', '.join(target_emp.profile.skills[:8])}
-- Recent Projects: {', '.join([p.name for p in target_emp.profile.projects[:3]])}
-"""
+        prompt = f"""
+        Analyze the following professional background text and extract structured data.
         
-        matched_desc = f"""
-Matched Employee:
-- Name: {matched_emp.name}
-- Role: {matched_emp.profile.role}
-- Skills: {', '.join(matched_emp.profile.skills[:8])}
-- Recent Projects: {', '.join([p.name for p in matched_emp.profile.projects[:3]])}
-"""
+        TEXT:
+        "{text[:4000]}"  # Truncate to avoid token limits
         
-        shared_info = f"""
-Overlap:
-- Shared Skills: {', '.join(shared_skills[:6]) if shared_skills else 'None'}
-- Tech Stack Overlap: {', '.join(tech_overlap[:5]) if tech_overlap else 'None'}
-- Matching Project Domains: {', '.join(matching_projects) if matching_projects else 'None'}
-"""
+        EXTRACT THE FOLLOWING IN STRICT JSON FORMAT:
+        {{
+            "role": "Inferred Job Title (e.g. Senior Backend Engineer)",
+            "seniority": "Junior|Mid|Senior|Staff|Principal",
+            "department": "Engineering|Product|Data|Design|Sales|Marketing",
+            "skills": ["skill1", "skill2", ...],
+            "projects": [
+                {{
+                    "name": "Project Name (or inferred summary)",
+                    "description": "Brief description of what was built/achieved",
+                    "tech": ["tech1", "tech2"]
+                }}
+            ]
+        }}
         
-        prompt = f"""You are an expert team collaboration advisor.
-
-{target_desc}
-
-{matched_desc}
-
-{shared_info}
-
-Generate:
-1. A concise 1-2 sentence reason summary explaining why these two employees are a good match
-2. Exactly 2-3 specific, actionable collaboration suggestions
-
-Return as JSON:
-{{
-  "reasonSummary": "...",
-  "collaborationSuggestions": ["...", "...", "..."]
-}}
-
-Focus on complementary skills, shared expertise, and concrete collaboration opportunities."""
+        Rules:
+        - If specific details are missing, infer reasonable defaults or use "Unknown".
+        - Extract at least 3-5 skills if possible.
+        - Extract at least 1 project if mentioned.
+        """
         
         try:
             response = self.model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.7,
+                    temperature=0.1, # Low temp for extraction
                     response_mime_type="application/json"
                 )
             )
-            content = json.loads(response.text)
-            return (
-                content.get("reasonSummary", "Strong skill overlap and complementary expertise."),
-                content.get("collaborationSuggestions", [
-                    "Collaborate on technical initiatives leveraging shared skills.",
-                    "Share best practices and knowledge in areas of expertise."
-                ])[:3]  # Limit to 3
-            )
+            return json.loads(response.text)
         except Exception as e:
-            print(f"Error generating LLM match content: {e}")
-            return (
-                "Strong overlap in technical skills and project experience.",
-                [
-                    f"Collaborate on projects involving {shared_skills[0] if shared_skills else 'common technologies'}.",
-                    "Share knowledge and best practices in areas of expertise."
-                ]
+            print(f"Error parsing profile: {e}")
+            # Return safe default
+            return {
+                "role": "Unknown",
+                "seniority": "Unknown",
+                "department": "Engineering",
+                "skills": [],
+                "projects": []
+            }
+
+    def _generate_llm_match_content(
+        self,
+        target_emp: Employee,
+        matched_emp: Employee,
+        shared_skills: list,
+        matching_projects: list,
+        tech_overlap: list
+    ) -> tuple:
+        """Use LLM to generate reason summary and collaboration suggestions 
+        using strict JSON prompts + anti-hallucination rules.
+        """
+
+        # ---- CONTEXT EXTRACTION HELPERS ----
+        def extract_patterns(skills: List[str], projects: List[object]) -> Dict[str, List[str]]:
+            patterns = {
+                "architecture": [],
+                "tooling": []
+            }
+            
+            arch_keywords = {
+                "Microservices": ["microservice", "distributed"],
+                "Serverless": ["lambda", "serverless", "cloud functions"],
+                "Event-Driven": ["kafka", "rabbitmq", "event", "pub/sub"],
+                "REST/GraphQL": ["rest", "graphql", "api"],
+                "Data Pipelines": ["etl", "pipeline", "airflow", "spark"]
+            }
+            
+            tool_keywords = {
+                "Containerization": ["docker", "kubernetes", "k8s", "container"],
+                "CI/CD": ["jenkins", "github actions", "gitlab ci", "circleci"],
+                "IaC": ["terraform", "ansible", "cloudformation"],
+                "Observability": ["prometheus", "grafana", "datadog", "new relic"],
+                "Cloud": ["aws", "gcp", "azure"]
+            }
+            
+            # Check skills and project descriptions
+            text_corpus = " ".join(skills).lower() + " " + " ".join([p.name + " " + getattr(p, "description", "") for p in projects]).lower()
+            
+            for cat, kws in arch_keywords.items():
+                if any(kw in text_corpus for kw in kws):
+                    patterns["architecture"].append(cat)
+                    
+            for cat, kws in tool_keywords.items():
+                if any(kw in text_corpus for kw in kws):
+                    patterns["tooling"].append(cat)
+            
+            return patterns
+
+        target_patterns = extract_patterns(target_emp.profile.skills, target_emp.profile.projects)
+        match_patterns = extract_patterns(matched_emp.profile.skills, matched_emp.profile.projects)
+        
+        shared_arch = list(set(target_patterns["architecture"]) & set(match_patterns["architecture"]))
+        shared_tooling = list(set(target_patterns["tooling"]) & set(match_patterns["tooling"]))
+
+        # ---- PREPARE STRUCTURED JSON INPUT FOR THE LLM ----
+        def project_to_dict(p):
+            return {
+                "name": p.name,
+                "description": getattr(p, "description", ""),
+                "tech": getattr(p, "tech", [])
+            }
+
+        target_json = {
+            "name": target_emp.name,
+            "role": target_emp.profile.role,
+            "skills": target_emp.profile.skills[:15], # Increased limit
+            "projects": [project_to_dict(p) for p in target_emp.profile.projects],
+            "department": target_emp.profile.department,
+            "seniority": target_emp.profile.seniority,
+        }
+
+        match_json = {
+            "name": matched_emp.name,
+            "role": matched_emp.profile.role,
+            "skills": matched_emp.profile.skills[:15],
+            "projects": [project_to_dict(p) for p in matched_emp.profile.projects],
+            "department": matched_emp.profile.department,
+            "seniority": matched_emp.profile.seniority,
+        }
+
+        overlap_json = {
+            "sharedSkills": shared_skills,
+            "sharedTech": tech_overlap,
+            "projectDomainOverlap": matching_projects,
+            "architecturePatterns": shared_arch,
+            "toolingOverlap": shared_tooling,
+            "matchingSeniority": target_emp.profile.seniority == matched_emp.profile.seniority,
+        }
+
+        full_payload = {
+            "target": target_json,
+            "match": match_json,
+            "overlap": overlap_json
+        }
+
+        # ---- TALENT NAVIGATOR PROMPT ----
+        prompt = f"""
+You are Talent Navigator, an expert in engineering collaboration, technical synergy analysis, and organizational development.
+
+You will receive STRICT structured JSON with real project descriptions, tech stacks, and overlap information.  
+You MUST use only the provided fields. No assumptions. No invented skills or projects.
+
+Your job:
+1. Produce a highly specific 1–2 sentence match reason.
+2. Produce 2–3 deeply actionable collaboration ideas tied directly to shared engineering context.
+
+Forbidden:
+- generic statements (“Both have frontend expertise”)
+- vague suggestions (“discuss shared interests”)
+- invented data
+
+Required output format:
+{{
+  "reasonSummary": "...",
+  "collaborationSuggestions": ["...", "...", "..."]
+}}
+
+Here is your input JSON:
+```json
+{json.dumps(full_payload, indent=2)}
+"""
+        # ---- CALL THE MODEL ----
+        try:
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,              # Low temperature for strictness
+                    response_mime_type="application/json"
+                )
             )
 
+            content = response.text.strip()
+            parsed = json.loads(content)
+
+            reason_summary = parsed.get("reasonSummary", "")
+            collab_suggestions = parsed.get("collaborationSuggestions", [])
+
+            # ---- VALIDATION LOGIC ----
+            is_valid = True
+            if not reason_summary or len(reason_summary) < 10:
+                is_valid = False
+            
+            forbidden_phrases = ["both have expertise", "discuss shared interests", "similar areas", "good match"]
+            if any(phrase in reason_summary.lower() for phrase in forbidden_phrases):
+                print(f"LLM returned generic reason: '{reason_summary}'. Triggering fallback.")
+                is_valid = False
+
+            if not is_valid:
+                raise ValueError("Generated content failed validation checks.")
+
+            return reason_summary, collab_suggestions[:3]
+
+        except Exception as e:
+            print(f"[ERROR] generate_llm_match_content failed or rejected: {e}")
+
+            # ---- DETERMINISTIC FALLBACK ----
+            # Build a specific reason from the extracted data
+            if shared_arch:
+                fallback_reason = f"Both engineers work with {shared_arch[0]} architectures, creating a strong foundation for technical collaboration."
+            elif matching_projects:
+                fallback_reason = f"Shared experience in {matching_projects[0]} domains suggests high potential for knowledge exchange."
+            elif tech_overlap:
+                fallback_reason = f"Strong technical alignment on {', '.join(tech_overlap[:3])} enables immediate collaboration on codebases."
+            else:
+                fallback_reason = "Complementary skill sets with potential for cross-functional collaboration."
+
+            fallback_collab = []
+            if shared_arch:
+                fallback_collab.append(f"Co-design systems using {shared_arch[0]} patterns.")
+            if tech_overlap:
+                fallback_collab.append(f"Pair program on complex {tech_overlap[0]} modules.")
+            if matching_projects:
+                fallback_collab.append(f"Share insights on {matching_projects[0]} challenges.")
+            
+            # Fill remaining suggestions
+            if len(fallback_collab) < 2:
+                fallback_collab.append("Conduct code reviews to share best practices.")
+                fallback_collab.append("Discuss architectural trade-offs in recent projects.")
+
+            return fallback_reason, fallback_collab[:3]
+
+    
     def generate_collaboration_summary(self, target_emp: Employee, recommendations: List[Dict]) -> str:
         print("Generating AI summary...")
         
-        # Prepare context for LLM
-        context = f"Target Employee: {target_emp.name} ({target_emp.profile.role})\n"
-        context += f"Skills: {', '.join(target_emp.profile.skills)}\n"
-        context += f"Projects: {', '.join(target_emp.profile.projects)}\n\n"
+        # Prepare context as JSON
+        context = {
+            "target": {
+                "name": target_emp.name,
+                "role": target_emp.profile.role,
+                "skills": target_emp.profile.skills,
+                "projects": [p.name for p in target_emp.profile.projects]
+            },
+            "recommendations": []
+        }
         
-        context += "Recommended Connections:\n"
         for rec in recommendations:
             emp = rec['employee']
-            context += f"- {emp.name} ({emp.profile.role})\n"
-            context += f"  Skills: {', '.join(emp.profile.skills)}\n"
-            context += f"  Projects: {', '.join(emp.profile.projects)}\n"
-            context += f"  Match Score: {rec['score']:.2f}\n"
+            context["recommendations"].append({
+                "name": emp.name,
+                "role": emp.profile.role,
+                "skills": emp.profile.skills[:5],
+                "match_score": f"{rec['score']:.2f}",
+                "reason": rec.get('summary', 'Matched based on skills and experience')
+            })
         
         prompt = f"""
-        You are Talent Navigator, an expert in organizational dynamics, collaboration design, and cross-team alignment.
-
-        Your purpose is to transform structured match data — including similarity scores, shared skills, project overlap, domain alignment, and keyword-based search results — into clear, motivational, and actionable human-readable insights.
-
-        You will be given a data package in the variable {{context}}, which may include:
-        - The target employee’s background
-        - A list of recommended or matched colleagues
-        - Match percentages or search relevance scores
-        - "Why recommended" or "why matched" explanations
-        - Extracted skill and project overlaps
-        - Collaboration opportunity metadata
-
-        Using this data, produce a concise but high-value collaboration summary that includes:
-
-        1. Why these individuals were selected:
-           - Highlight deeper thematic connections such as shared technical focus areas, complementary strengths, parallel project histories, or domain alignment.
-           - Interpret the relevance rather than restating raw data.
-
-        2. Specific collaboration opportunities:
-           - Provide 2–4 actionable suggestions (mentorship, joint projects, cross-functional knowledge sharing, combining complementary skills, or accelerating work in shared areas).
-
-        3. Potential organizational impact:
-           - Describe how these connections can reduce silos, accelerate delivery, strengthen cross-team workflows, expand knowledge sharing, or drive innovation.
-
+        You are Talent Navigator, an expert in organizational dynamics.
+        
+        Analyze the following match data:
+        {json.dumps(context, indent=2)}
+        
+        Produce a concise, high-value collaboration summary that includes:
+        
+        1. **Why these individuals were selected**: Highlight deeper thematic connections (shared tech, complementary strengths).
+        2. **Specific collaboration opportunities**: Provide 2-3 actionable suggestions (mentorship, joint projects).
+        3. **Potential organizational impact**: How these connections reduce silos or accelerate delivery.
+        
         Style Requirements:
-        - Professional, clear, and friendly.
-        - Action-oriented and encouraging.
-        - No speculative personal attributes.
-        - 3–5 short paragraphs.
-        - Do not reveal any underlying scoring algorithms or system logic.
-
-        Now analyze the following data and produce the collaboration summary:
-
-        {context}
+        - Professional, clear, and encouraging.
+        - 3-5 short paragraphs.
+        - Do NOT reveal scoring algorithms.
+        - Output raw text (Markdown supported).
         """
         
         try:

@@ -113,9 +113,55 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({ empl
 
                 {/* Scrollable Content */}
                 <div className="overflow-y-auto max-h-[calc(90vh-180px)] px-8 py-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                    {/* Match Details (Top Priority) */}
+                    <div className="mb-8 space-y-6">
+                        {employee.resumeMatch && (
+                            <section className="animate-fade-in">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                                    <Lightbulb className="w-5 h-5 mr-2 text-yellow-500" />
+                                    Why Recommended
+                                </h3>
+                                <div className="bg-blue-50 rounded-lg p-5 border border-blue-200">
+                                    <p className="text-base text-gray-800 leading-relaxed font-medium mb-4">
+                                        {employee.resumeMatch.reasonSummary}
+                                    </p>
+                                    <div className="flex flex-wrap gap-4 text-sm">
+                                        {employee.resumeMatch.sharedSkills.length > 0 && (
+                                            <div className="bg-white px-3 py-1.5 rounded border border-blue-100 shadow-sm">
+                                                <span className="font-semibold text-gray-600 mr-2">Shared Skills:</span>
+                                                <span className="text-gray-800">{employee.resumeMatch.sharedSkills.slice(0, 4).join(', ')}</span>
+                                            </div>
+                                        )}
+                                        {employee.resumeMatch.matchingDomains.length > 0 && (
+                                            <div className="bg-white px-3 py-1.5 rounded border border-blue-100 shadow-sm">
+                                                <span className="font-semibold text-gray-600 mr-2">Domains:</span>
+                                                <span className="text-gray-800">{employee.resumeMatch.matchingDomains.join(', ')}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </section>
+                        )}
+
+                        {employee.collaborationSuggestions.length > 0 && (
+                            <section className="animate-fade-in delay-100">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-3">Collaboration Ideas</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {employee.collaborationSuggestions.map((suggestion, idx) => (
+                                        <div key={idx} className="flex items-start bg-green-50 rounded-lg p-4 border border-green-200 hover:shadow-md transition-shadow">
+                                            <span className="text-green-600 mr-3 font-bold text-lg">→</span>
+                                            <span className="text-gray-800 text-sm font-medium leading-snug">{suggestion}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         {/* Left Column */}
-                        <div className="space-y-6">
+                        <div className="space-y-8">
                             {/* Experience Section */}
                             <section>
                                 <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
@@ -141,7 +187,7 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({ empl
                             {/* Skills Section */}
                             <section>
                                 <h3 className="text-lg font-semibold text-gray-900 mb-3">Skills & Tech Stack</h3>
-                                <div className="space-y-3">
+                                <div className="space-y-4">
                                     <div>
                                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Primary Skills</p>
                                         <div className="flex flex-wrap gap-2">
@@ -180,16 +226,16 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({ empl
                         </div>
 
                         {/* Right Column */}
-                        <div className="space-y-6">
+                        <div className="space-y-8">
                             {/* Current Projects */}
                             <section>
                                 <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
                                     <Rocket className="w-5 h-5 mr-2 text-gray-600" />
                                     Current Projects
                                 </h3>
-                                <div className="space-y-3">
+                                <div className="space-y-4">
                                     {employee.projects.slice(0, 4).map((project, idx) => (
-                                        <div key={idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                        <div key={idx} className="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:border-gray-300 transition-colors">
                                             <h4 className="font-semibold text-gray-900 mb-1">{project.name}</h4>
                                             <p className="text-sm text-gray-600 mb-2">{project.description}</p>
                                             <div className="flex flex-wrap gap-1">
@@ -203,62 +249,6 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({ empl
                                     ))}
                                 </div>
                             </section>
-
-                            {/* Match Explanation */}
-                            {employee.resumeMatch && (
-                                <section>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Why Recommended</h3>
-                                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-200 space-y-3">
-                                        <p className="text-sm text-gray-700 leading-relaxed">
-                                            {employee.resumeMatch.reasonSummary}
-                                        </p>
-                                        <div className="grid grid-cols-2 gap-2 text-xs">
-                                            {employee.resumeMatch.sharedSkills.length > 0 && (
-                                                <div>
-                                                    <p className="font-semibold text-gray-600 mb-1">Shared Skills</p>
-                                                    <p className="text-gray-600">{employee.resumeMatch.sharedSkills.slice(0, 3).join(', ')}</p>
-                                                </div>
-                                            )}
-                                            {employee.resumeMatch.techOverlap.length > 0 && (
-                                                <div>
-                                                    <p className="font-semibold text-gray-600 mb-1">Tech Overlap</p>
-                                                    <p className="text-gray-600">{employee.resumeMatch.techOverlap.slice(0, 3).join(', ')}</p>
-                                                </div>
-                                            )}
-                                            {employee.resumeMatch.matchingDomains.length > 0 && (
-                                                <div>
-                                                    <p className="font-semibold text-gray-600 mb-1">Matching Domains</p>
-                                                    <p className="text-gray-600">{employee.resumeMatch.matchingDomains.join(', ')}</p>
-                                                </div>
-                                            )}
-                                            {employee.resumeMatch.matchingSeniority && (
-                                                <div>
-                                                    <p className="font-semibold text-gray-600 mb-1">Seniority</p>
-                                                    <p className="text-green-600">Aligned ✓</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </section>
-                            )}
-
-                            {/* Collaboration Suggestions */}
-                            {employee.collaborationSuggestions.length > 0 && (
-                                <section>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
-                                        <Lightbulb className="w-5 h-5 mr-2 text-gray-600" />
-                                        Collaboration Ideas
-                                    </h3>
-                                    <ul className="space-y-2">
-                                        {employee.collaborationSuggestions.map((suggestion, idx) => (
-                                            <li key={idx} className="flex items-start text-sm text-gray-700 bg-green-50 rounded-lg p-3 border border-green-200">
-                                                <span className="text-green-600 mr-2 font-bold">→</span>
-                                                <span>{suggestion}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </section>
-                            )}
                         </div>
                     </div>
                 </div>

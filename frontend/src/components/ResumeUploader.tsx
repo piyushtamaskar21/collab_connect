@@ -119,17 +119,51 @@ export const ResumeUploader: React.FC<ResumeUploaderProps> = ({ onTextExtracted 
                 if (isKeywordSearch) {
                     mode = 'search';
                 } else {
-                    // Name search heuristics:
-                    // 1. Short length (e.g. < 50 chars)
-                    // 2. No special characters typically found in code or complex queries (except space, apostrophe, hyphen)
-                    // 3. 1-3 words
-                    const words = combinedText.trim().split(/\s+/);
-                    const isShort = combinedText.length < 50;
-                    const isFewWords = words.length >= 1 && words.length <= 3;
-                    const isNameLike = /^[a-zA-Z\s'-]+$/.test(combinedText);
+                    // Common technical keywords (skills, languages, frameworks, tools, domains)
+                    const technicalKeywords = [
+                        // Programming Languages
+                        'python', 'java', 'javascript', 'typescript', 'go', 'rust', 'c++', 'c#', 'ruby', 'php', 'swift', 'kotlin',
+                        // Frontend
+                        'react', 'vue', 'angular', 'svelte', 'next.js', 'nextjs', 'html', 'css', 'tailwind',
+                        // Backend
+                        'node', 'express', 'django', 'flask', 'spring', 'rails',
+                        // Databases
+                        'sql', 'nosql', 'postgresql', 'postgres', 'mysql', 'mongodb', 'redis', 'elasticsearch',
+                        // Cloud & DevOps
+                        'aws', 'gcp', 'azure', 'docker', 'kubernetes', 'k8s', 'jenkins', 'ci/cd', 'terraform',
+                        // Data & ML
+                        'machine learning', 'data science', 'ai', 'deep learning', 'tensorflow', 'pytorch', 'pandas', 'spark',
+                        // Other
+                        'api', 'rest', 'graphql', 'microservices', 'backend', 'frontend', 'fullstack', 'devops'
+                    ];
 
-                    if (isShort && isFewWords && isNameLike) {
-                        mode = 'name_search';
+                    // Check if query matches technical keywords
+                    const isTechnicalQuery = technicalKeywords.some(keyword =>
+                        lowerText.includes(keyword) || keyword.includes(lowerText)
+                    );
+
+                    if (isTechnicalQuery) {
+                        mode = 'search';
+                    } else {
+                        // Name search heuristics (more restrictive):
+                        // 1. Short length (< 50 chars)
+                        // 2. Only letters, spaces, apostrophes, hyphens
+                        // 3. 1-3 words
+                        // 4. Looks like a proper name (first letter capitalized or all lowercase)
+                        const words = combinedText.trim().split(/\s+/);
+                        const isShort = combinedText.length < 50;
+                        const isFewWords = words.length >= 1 && words.length <= 3;
+                        const isNameLike = /^[a-zA-Z\s'-]+$/.test(combinedText);
+
+                        // Check if it looks like a proper name (at least one capitalized word)
+                        const hasCapitalizedWord = words.some(word => word.length > 0 && word[0] === word[0].toUpperCase());
+
+                        if (isShort && isFewWords && isNameLike && hasCapitalizedWord) {
+                            mode = 'name_search';
+                        } else {
+                            // Default to search mode for ambiguous cases
+                            mode = 'search';
+                        }
                     }
                 }
             }
